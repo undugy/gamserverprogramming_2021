@@ -2,8 +2,8 @@
 
 const short SERVER_PORT = 4000;
 
-const int  WORLD_HEIGHT = 8;
-const int  WORLD_WIDTH = 8;
+const int  WORLD_HEIGHT = 16;
+const int  WORLD_WIDTH = 16;
 const int  MAX_NAME_SIZE = 20;
 const int  MAX_USER = 10;
 

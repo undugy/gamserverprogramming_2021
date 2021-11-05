@@ -1,21 +1,21 @@
 #include <iostream>
 #include <WS2tcpip.h>
 #include <MSWSock.h>
+#include <thread>
 #include <array>
-#include<thread>
-#include<mutex>
+#include <vector>
+#include <mutex>
+#include<unordered_set>
 #include "protocol.h"
-#include<vector>
 using namespace std;
 #pragma comment (lib, "WS2_32.LIB")
 #pragma comment (lib, "MSWSock.LIB")
 
 const int BUFSIZE = 256;
-//datarace에 조심해야할 전역변수들
-//volatile bool g_shutdown = false;
+const int RANGE = 3;
 HANDLE g_h_iocp;
 SOCKET g_s_socket;
-//-----------------------------
+
 void error_display(int err_no)
 {
 	WCHAR* lpMsgBuf;
@@ -56,30 +56,28 @@ public:
 	{
 	}
 };
-enum STATE {
-	ST_FREE,
-	ST_ACCEPT,
-	ST_INGAME
-};
+
+enum STATE { ST_FREE, ST_ACCEPT, ST_INGAME };
 class CLIENT {
 public:
 	char name[MAX_NAME_SIZE];
 	int	   _id;
 	short  x, y;
+	unordered_set<int> viewlist;
+	mutex vl;
+
+
 	mutex state_lock;
-	//bool in_use = false;
 	STATE _state;
 
 	EXP_OVER _recv_over;
-	SOCKET _socket;
+	SOCKET  _socket;
 	int		_prev_size;
 public:
-	CLIENT():_state(ST_FREE),_prev_size(0)
+	CLIENT() : _state(ST_FREE), _prev_size(0)
 	{
-		
 		x = 0;
 		y = 0;
-		_prev_size = 0;
 	}
 
 	~CLIENT()
@@ -109,18 +107,22 @@ public:
 };
 
 array <CLIENT, MAX_USER> clients;
-
+bool is_near(int a, int b)
+{
+	if(RANGE<abs(clients[a].x)
+}
 int get_new_id()
 {
 	static int g_id = 0;
 
-	for (int i = 0; i < MAX_USER; ++i)
-	{
+	for (int i = 0; i < MAX_USER; ++i) {
 		clients[i].state_lock.lock();
 		if (ST_FREE == clients[i]._state) {
-			clients[i].in_use = true;
+			clients[i]._state = ST_ACCEPT;
+			clients[i].state_lock.unlock();
 			return i;
 		}
+		clients[i].state_lock.unlock();
 	}
 	cout << "Maximum Number of Clients Overflow!!\n";
 	return -1;
@@ -157,22 +159,33 @@ void send_remove_object(int c_id, int victim)
 	clients[c_id].do_send(sizeof(packet), &packet);
 }
 
+void send_put_object(int c_id, int target)
+{
+	sc_packet_put_object packet;
+	packet.id = target;
+	int
+	packet.size = sizeof(packet);
+	packet.type = SC_PACKET_PUT_OBJECT;
+	clients[c_id].do_send(sizeof(packet), &packet);
+}
+
 void Disconnect(int c_id)
 {
 	clients[c_id].state_lock.lock();
 	closesocket(clients[c_id]._socket);
 	clients[c_id]._state = ST_FREE;
 	clients[c_id].state_lock.unlock();
+
 	for (auto& cl : clients) {
-		clients[c_id].state_lock.lock();
-		if (ST_INGAME != cl._state)
-		{
-			clients[c_id].state_lock.unlock();
+		cl.state_lock.lock();
+		if (ST_INGAME != cl._state) {
+			cl.state_lock.unlock();
 			continue;
 		}
+		cl.state_lock.unlock();
 		send_remove_object(cl._id, c_id);
 	}
-	
+
 }
 
 void process_packet(int client_id, unsigned char* p)
@@ -185,10 +198,27 @@ void process_packet(int client_id, unsigned char* p)
 		cs_packet_login* packet = reinterpret_cast<cs_packet_login*>(p);
 		strcpy_s(cl.name, packet->name);
 		send_login_ok_packet(client_id);
+		CLIENT& cl = clients[client_id];
+		cl.state_lock.lock();
+		cl._state = ST_INGAME;
+		cl.state_lock.unlock();
+
+
 
 		for (auto& other : clients) {
 			if (other._id == client_id) continue;
-			if (false == other.in_use) continue;
+			other.state_lock.lock();
+			if (ST_INGAME != other._state) {
+				other.state_lock.unlock();
+				continue;
+			}
+			other.state_lock.unlock();
+			if (false == is_near(other._id, client_id))
+				continue;
+			clients[client_id].vl.lock();
+			clients[client_id].viewlist.insert(client_id);
+			clients[client_id].vl.unlock();
+			
 			sc_packet_put_object packet;
 			packet.id = client_id;
 			strcpy_s(packet.name, cl.name);
@@ -202,7 +232,12 @@ void process_packet(int client_id, unsigned char* p)
 
 		for (auto& other : clients) {
 			if (other._id == client_id) continue;
-			if (false == other.in_use) continue;
+			other.state_lock.lock();
+			if (ST_INGAME != other._state) {
+				other.state_lock.unlock();
+				continue;
+			}
+			other.state_lock.unlock();
 			sc_packet_put_object packet;
 			packet.id = other._id;
 			strcpy_s(packet.name, other.name);
@@ -219,6 +254,7 @@ void process_packet(int client_id, unsigned char* p)
 		cs_packet_move* packet = reinterpret_cast<cs_packet_move*>(p);
 		int x = cl.x;
 		int y = cl.y;
+		
 		switch (packet->direction) {
 		case 0: if (y > 0) y--; break;
 		case 1: if (y < (WORLD_HEIGHT - 1)) y++; break;
@@ -230,9 +266,60 @@ void process_packet(int client_id, unsigned char* p)
 		}
 		cl.x = x;
 		cl.y = y;
+		unordered_set<int>nearlist;
+		for (auto& other : clients) {
+			if (other._id == client_id)
+				continue;
+			if (ST_INGAME != other._state)
+				continue;
+			if (false == is_near(client_id, other._id))
+				continue;
+			nearlist.insert(other._id);
+		}
+
+		cl.vl.lock();
+		unordered_set<int>my_vl{ cl.viewlist };
+		cl.vl.unlock();
+
+		for (auto other : nearlist)
+		{
+			cl.vl.lock();
+			if (0 == my_vl.count(other)) {
+				cl.viewlist.insert(other);
+				cl.vl.unlock();
+				send_put_object(cl._id, other);
+
+				clients[other].vl.lock();
+				if (0 == clients[other].viewlist.count(cl._id)) {
+					clients[other].viewlist.insert(cl._id);
+					clients[other].vl.unlock();
+					send_put_object(other, cl._id);
+				}
+				else
+				{
+
+				}
+			}
+		}
+		for (auto other : my_vl) {
+			if (0 == nearlist.count(other)) {
+				cl.vl.lock();
+				cl.viewlist.erase(other);
+				cl.vl.unlock();
+				send_remove_object(cl._id, other);
+
+				clients[other].vl.lock();
+				if(0!=clients[other].viewlist.count())
+			}
+		}
+
 		for (auto& cl : clients) {
-			if (true == cl.in_use)
+			cl.state_lock.lock();
+			if (ST_INGAME == cl._state) {
+				cl.state_lock.unlock();
 				send_move_packet(cl._id, client_id);
+			}
+			else cl.state_lock.unlock();
 		}
 	}
 	}
@@ -249,6 +336,10 @@ void worker()
 		int client_id = static_cast<int>(iocp_key);
 		EXP_OVER* exp_over = reinterpret_cast<EXP_OVER*>(p_over);
 		if (FALSE == ret) {
+			int err_no = WSAGetLastError();
+			cout << "GQCS Error : ";
+			error_display(err_no);
+			cout << endl;
 			Disconnect(client_id);
 			if (exp_over->_comp_op == OP_SEND)
 				delete exp_over;
@@ -285,8 +376,6 @@ void worker()
 		}
 		case OP_ACCEPT: {
 			cout << "Accept Completed.\n";
-			for (int i = 0; i < MAX_USER; ++i)
-				clients[i]._id = i;
 			SOCKET c_socket = *(reinterpret_cast<SOCKET*>(exp_over->_net_buf));
 			int new_id = get_new_id();
 			CLIENT& cl = clients[new_id];
@@ -305,14 +394,14 @@ void worker()
 
 			ZeroMemory(&exp_over->_wsa_over, sizeof(exp_over->_wsa_over));
 			c_socket = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, 0, 0, WSA_FLAG_OVERLAPPED);
-			*(reinterpret_cast<SOCKET*>(exp_over->_net_buf))=c_socket;
+			*(reinterpret_cast<SOCKET*>(exp_over->_net_buf)) = c_socket;
 			AcceptEx(g_s_socket, c_socket, exp_over->_net_buf + 8, 0, sizeof(SOCKADDR_IN) + 16,
-				sizeof(SOCKADDR_IN) + 16, NULL, &exp_over->_wsa_over);//64비트라 8바이트 건들지 말라 해야함
-
+				sizeof(SOCKADDR_IN) + 16, NULL, &exp_over->_wsa_over);
 		}
 		}
 	}
 }
+
 int main()
 {
 	wcout.imbue(locale("korean"));
@@ -333,7 +422,7 @@ int main()
 	SOCKET c_socket = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, 0, 0, WSA_FLAG_OVERLAPPED);
 	char	accept_buf[sizeof(SOCKADDR_IN) * 2 + 32 + 100];
 	EXP_OVER	accept_ex;
-	*(reinterpret_cast<SOCKET*>(accept_ex._net_buf)) = c_socket;
+	*(reinterpret_cast<SOCKET*>(&accept_ex._net_buf)) = c_socket;
 	ZeroMemory(&accept_ex._wsa_over, sizeof(accept_ex._wsa_over));
 	accept_ex._comp_op = OP_ACCEPT;
 
@@ -341,14 +430,17 @@ int main()
 		sizeof(SOCKADDR_IN) + 16, NULL, &accept_ex._wsa_over);
 	cout << "Accept Called\n";
 
-	cout << "Entering Main Loop\n";
-	vector<thread>worker_thread;
+	for (int i = 0; i < MAX_USER; ++i)
+		clients[i]._id = i;
+
+	cout << "Creating Worker Threads\n";
+
+	vector <thread> worker_threads;
 	for (int i = 0; i < 6; ++i)
-	{
-		worker_thread.emplace_back(worker);
-	}
-	for (auto& a : worker_thread)
-		a.join();
+		worker_threads.emplace_back(worker);
+	for (auto& th : worker_threads)
+		th.join();
+
 	for (auto& cl : clients) {
 		if (ST_INGAME == cl._state)
 			Disconnect(cl._id);
