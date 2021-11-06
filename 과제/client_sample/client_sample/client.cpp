@@ -24,8 +24,8 @@ using namespace std;
 #include "..\..\iocp_multi\iocp_multi\protocol.h"
 
 sf::TcpSocket socket;
-constexpr auto SCREEN_WIDTH = 8;
-constexpr auto SCREEN_HEIGHT = 8;
+constexpr auto SCREEN_WIDTH = 16;
+constexpr auto SCREEN_HEIGHT = 16;
 
 constexpr auto TILE_WIDTH = 65;
 constexpr auto WINDOW_WIDTH = TILE_WIDTH * SCREEN_WIDTH + 10;   // size of window
@@ -33,10 +33,11 @@ constexpr auto WINDOW_HEIGHT = TILE_WIDTH * SCREEN_WIDTH + 10;
 //constexpr auto BUF_SIZE = MAX_BUFFER;
 
 int g_myid;
-
+int my_view_x = 1;
+int my_view_y=1;
 sf::RenderWindow* g_window;
 sf::Font g_font;
-sf::View* g_view;
+sf::View g_view{sf::FloatRect(0,0,WINDOW_WIDTH,WINDOW_HEIGHT)};
 class OBJECT {
 private:
 	bool m_showing;
@@ -110,25 +111,32 @@ public:
 
 OBJECT avatar;
 OBJECT players[MAX_USER];
+OBJECT map_obj[16];
 
 OBJECT white_tile;
 OBJECT black_tile;
 
 sf::Texture* board;
 sf::Texture* pieces;
-
+sf::Texture* mapelement;
 void client_initialize()
 {
 	board = new sf::Texture;
 	pieces = new sf::Texture;
+	mapelement= new sf::Texture;
 	if (false == g_font.loadFromFile("cour.ttf")) {
 		cout << "Font Loading Error!\n";
 		while (true);
 	}
 	board->loadFromFile("chessmap.bmp");
 	pieces->loadFromFile("chess2.png");
+	mapelement->loadFromFile("mapobj.png");
 	white_tile = OBJECT{ *board, 5, 5, TILE_WIDTH, TILE_WIDTH };
 	black_tile = OBJECT{ *board, 69, 5, TILE_WIDTH, TILE_WIDTH };
+	for (int i = 0; i < 16; ++i)
+	{
+		map_obj[i] = OBJECT{ *mapelement,(2 + i * TILE_WIDTH),130,(2 + i * TILE_WIDTH),185 };
+	}
 	avatar = OBJECT{ *pieces, 128, 0, 64, 64 };
 	for (auto& pl : players) {
 		pl = OBJECT{ *pieces, 0, 0, 64, 64 };
@@ -139,6 +147,7 @@ void client_finish()
 {
 	delete board;
 	delete pieces;
+	delete mapelement;
 }
 
 void ProcessPacket(char* ptr)
@@ -181,6 +190,26 @@ void ProcessPacket(char* ptr)
 		int other_id = my_packet->id;
 		if (other_id == g_myid) {
 			avatar.move(my_packet->x, my_packet->y);
+			
+			if (avatar.m_x >= (my_view_x * (SCREEN_WIDTH / 2))) {
+				if (WORLD_WIDTH - (SCREEN_WIDTH / 2)>=avatar.m_x)
+					my_view_x += 1;
+			}
+			else if (avatar.m_x + (SCREEN_WIDTH / 2) - (my_view_x * (SCREEN_WIDTH / 2)) < 0)
+			    my_view_x -= 1;
+			
+
+
+			if (avatar.m_y >= (my_view_y * (SCREEN_HEIGHT / 2))) {
+				if (WORLD_HEIGHT - (SCREEN_HEIGHT / 2) >= avatar.m_y)
+				my_view_y += 1;
+			}
+			else if (avatar.m_y+ (SCREEN_HEIGHT / 2) - (my_view_y  * (SCREEN_HEIGHT / 2)) <0 )
+				my_view_y -= 1;
+			
+			
+			
+
 		}
 		else if (other_id < MAX_USER) {
 			players[other_id].move(my_packet->x, my_packet->y);
@@ -189,6 +218,9 @@ void ProcessPacket(char* ptr)
 			//npc[other_id - NPC_START].x = my_packet->x;
 			//npc[other_id - NPC_START].y = my_packet->y;
 		}
+		
+		g_view.setCenter((TILE_WIDTH * SCREEN_WIDTH*my_view_x + 10)/2 , (TILE_WIDTH * SCREEN_HEIGHT * my_view_y + 10)/2 );
+		printf("x [%d], y[%d]\n",avatar.m_x,avatar.m_y);
 		break;
 	}
 
@@ -239,9 +271,11 @@ void process_data(char* net_buf, size_t io_byte)
 
 void client_main()
 {
+	sf::Text text;
+	text.setPosition((float)((my_view_x - 1) * (SCREEN_WIDTH / 2)), (float)((my_view_y - 1) * (SCREEN_HEIGHT / 2)));
 	char net_buf[BUFSIZE];
 	size_t	received;
-
+	OBJECT* random_obj;
 	auto recv_result = socket.receive(net_buf, BUFSIZE, received);
 	if (recv_result == sf::Socket::Error)
 	{
@@ -256,23 +290,35 @@ void client_main()
 		{
 			int tile_x = i;
 			int tile_y = j;
+			int ran = rand() % 16;
 			if (((tile_x  + tile_y) % 2) == 1) {
-				white_tile.a_move(TILE_WIDTH * i + 7, TILE_WIDTH * j + 7);
+				white_tile.a_move(TILE_WIDTH * (i+ (my_view_x-1) * (SCREEN_WIDTH / 2)) + 7, 
+					TILE_WIDTH * (j + (my_view_y-1) * (SCREEN_HEIGHT / 2)) + 7);
+				map_obj[my_view_y % 16].a_move(TILE_WIDTH * (i + (my_view_x - 1) * (SCREEN_WIDTH / 2)) + 7,
+					TILE_WIDTH * (j + (my_view_y - 1) * (SCREEN_HEIGHT / 2)) + 7);
 				white_tile.a_draw();
+				if (j % 8 == 0)
+				map_obj[my_view_y % 16].a_draw();
 			}
 			else
 			{
-				black_tile.a_move(TILE_WIDTH * i + 7, TILE_WIDTH * j + 7);
+				black_tile.a_move(TILE_WIDTH * (i+ (my_view_x-1) * (SCREEN_WIDTH / 2)) + 7, 
+					TILE_WIDTH * (j + (my_view_y-1) * (SCREEN_HEIGHT / 2)) + 7);
+				map_obj[my_view_x%16].a_move(TILE_WIDTH * (i + (my_view_x - 1) * (SCREEN_WIDTH / 2)) + 7,
+					TILE_WIDTH * (j + (my_view_y - 1) * (SCREEN_HEIGHT / 2)) + 7);
 				black_tile.a_draw();
+				if(i%8==0)
+				map_obj[my_view_x % 16].a_draw();
 			}
 		}
 	avatar.draw();
 	for (auto& pl : players) pl.draw();
-	sf::Text text;
+	
 	text.setFont(g_font);
 	char buf[100];
 	sprintf_s(buf, "(%d, %d)", avatar.m_x, avatar.m_y);
 	text.setString(buf);
+
 	g_window->draw(text);
 }
 
@@ -295,7 +341,8 @@ void send_login_packet(string &name)
 	size_t sent = 0;
 	socket.send(&packet, sizeof(packet), sent);
 }
-
+//1초에한번 움직이기
+chrono::steady_clock::time_point t1 = chrono::high_resolution_clock::now();
 int main()
 {
 	wcout.imbue(locale("korean"));
@@ -319,7 +366,7 @@ int main()
 	avatar.set_name(name.c_str());
 	sf::RenderWindow window(sf::VideoMode(WINDOW_WIDTH, WINDOW_HEIGHT), "2D CLIENT");
 	g_window = &window;
-
+	
 	while (window.isOpen())
 	{
 		sf::Event event;
@@ -328,6 +375,9 @@ int main()
 			if (event.type == sf::Event::Closed)
 				window.close();
 			if (event.type == sf::Event::KeyPressed) {
+				
+				if (t1 + 1s > chrono::high_resolution_clock::now()) continue;
+				t1 = chrono::high_resolution_clock::now();
 				int direction = -1;
 				switch (event.key.code) {
 				case sf::Keyboard::Left:
@@ -347,10 +397,12 @@ int main()
 					break;
 				}
 				if (-1 != direction) send_move_packet(direction);
+				
 			}
 		}
 
 		window.clear();
+		g_window->setView(g_view);
 		client_main();
 		window.display();
 	}
