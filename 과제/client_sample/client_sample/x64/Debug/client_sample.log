@@ -1,5 +1,0 @@
-﻿  client.cpp
-C:\Users\undug\Documents\GitHub\gamserverprogramming_2021\과제\client_sample\client_sample\client.cpp(222,112): warning C4244: '인수': 'int'에서 'float'(으)로 변환하면서 데이터가 손실될 수 있습니다.
-C:\Users\undug\Documents\GitHub\gamserverprogramming_2021\과제\client_sample\client_sample\client.cpp(222,62): warning C4244: '인수': 'int'에서 'float'(으)로 변환하면서 데이터가 손실될 수 있습니다.
-C:\Users\undug\Documents\GitHub\gamserverprogramming_2021\과제\client_sample\client_sample\client.cpp(278,10): warning C4101: 'random_obj' :참조되지 않은 지역 변수입니다.
-  client_sample.vcxproj -> C:\Users\undug\Documents\GitHub\gamserverprogramming_2021\과제\client_sample\x64\Debug\client_sample.exe
