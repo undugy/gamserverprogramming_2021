@@ -194,7 +194,7 @@ void ProcessPacket(char* ptr)
 			players[other_id].move(my_packet->x, my_packet->y);
 		}
 		break;
-	} 
+	}
 
 	case SC_PACKET_REMOVE_OBJECT:
 	{
@@ -208,6 +208,22 @@ void ProcessPacket(char* ptr)
 		}
 		else {
 			players[other_id].hide();
+		}
+		break;
+	}
+
+	case SC_PACKET_CHAT:
+	{
+		sc_packet_chat* my_packet = reinterpret_cast<sc_packet_chat*>(ptr);
+		int other_id = my_packet->id;
+		if (other_id == g_myid) {
+			avatar.set_chat(my_packet->message);
+		}
+		else if (other_id < MAX_USER) {
+			players[other_id].set_chat(my_packet->message);
+		}
+		else {
+			players[other_id].set_chat(my_packet->message);
 		}
 		break;
 	}

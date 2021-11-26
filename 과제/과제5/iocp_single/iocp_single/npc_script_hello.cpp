@@ -8,19 +8,15 @@
 #include <unordered_set>
 #include <concurrent_priority_queue.h>
 
+extern "C" {
+#include "include\lua.h"
+#include "include\lauxlib.h"
+#include "include\lualib.h"
+}
+#pragma comment (lib, "lua54.lib")
+
 #include "protocol.h"
 using namespace std;
-
-
-
-extern "C" {			//c언어로 정의된 것 이라는 뜻
-#include"include/lua.h"
-#include"include/lauxlib.h"
-//#include"include/lua.hpp"
-//#include"include/luaconf.h"
-#include"include/lualib.h"
-}
-#pragma comment(lib,"lua54.lib")
 #pragma comment (lib, "WS2_32.LIB")
 #pragma comment (lib, "MSWSock.LIB")
 
@@ -45,17 +41,18 @@ struct timer_event {
 };
 
 concurrency::concurrent_priority_queue <timer_event> timer_queue;
-timer_event SetNpcMove(int id);
+
 void error_display(int err_no);
 void do_npc_move(int npc_id);
 
-enum COMP_OP { OP_RECV, OP_SEND, OP_ACCEPT, OP_NPC_MOVE };
+enum COMP_OP { OP_RECV, OP_SEND, OP_ACCEPT, OP_NPC_MOVE, OP_PLAYER_MOVE };
 class EXP_OVER {
 public:
 	WSAOVERLAPPED	_wsa_over;
 	COMP_OP			_comp_op;
 	WSABUF			_wsa_buf;
 	unsigned char	_net_buf[BUFSIZE];
+	int				_target;
 public:
 	EXP_OVER(COMP_OP comp_op, char num_bytes, void* mess) : _comp_op(comp_op)
 	{
@@ -85,6 +82,7 @@ public:
 	short  x, y;
 	unordered_set   <int>  viewlist;
 	mutex vl;
+	lua_State* L;
 
 	mutex state_lock;
 	STATE _state;
@@ -231,6 +229,16 @@ void send_put_object(int c_id, int target)
 	clients[c_id].do_send(sizeof(packet), &packet);
 }
 
+void send_chat_packet(int user_id, int my_id, char *mess)
+{
+	sc_packet_chat packet;
+	packet.id = my_id;
+	packet.size = sizeof(packet);
+	packet.type = SC_PACKET_CHAT;
+	strcpy_s(packet.message, mess);
+	clients[user_id].do_send(sizeof(packet), &packet);
+}
+
 void Disconnect(int c_id)
 {
 	CLIENT& cl = clients[c_id];
@@ -256,11 +264,19 @@ void Disconnect(int c_id)
 	clients[c_id].state_lock.unlock();
 }
 
+void Activate_Player_Move_Event(int target, int player_id)
+{
+	EXP_OVER* exp_over = new EXP_OVER;
+	exp_over->_comp_op = OP_PLAYER_MOVE;
+	exp_over->_target = player_id;
+	PostQueuedCompletionStatus(g_h_iocp, 1, target, &exp_over->_wsa_over);
+}
+
 void process_packet(int client_id, unsigned char* p)
 {
 	unsigned char packet_type = p[1];
 	CLIENT& cl = clients[client_id];
-	timer_event t;
+
 	switch (packet_type) {
 	case CS_PACKET_LOGIN: {
 		cs_packet_login* packet = reinterpret_cast<cs_packet_login*>(p);
@@ -317,11 +333,6 @@ void process_packet(int client_id, unsigned char* p)
 			clients[client_id].viewlist.insert(other._id);
 			clients[client_id].vl.unlock();
 
-			if (true == is_npc(other._id)) {
-
-				timer_queue.push(SetNpcMove(other._id));
-			}
-
 			sc_packet_put_object packet;
 			packet.id = other._id;
 			strcpy_s(packet.name, other.name);
@@ -331,8 +342,6 @@ void process_packet(int client_id, unsigned char* p)
 			packet.x = other.x;
 			packet.y = other.y;
 			cl.do_send(sizeof(packet), &packet);
-
-			//if (true == is_npc(other._id))
 		}
 		break;
 	}
@@ -361,11 +370,10 @@ void process_packet(int client_id, unsigned char* p)
 				continue;
 			if (false == is_near(client_id, other._id))
 				continue;
+			if (true == is_npc(other._id)) {
+				Activate_Player_Move_Event(other._id, cl._id);
+			}
 			nearlist.insert(other._id);
-			//if (true == is_npc(other._id)) {
-			//
-			//	timer_queue.push(SetNpcMove(other._id));
-			//}
 		}
 
 		send_move_packet(cl._id, cl._id);
@@ -382,11 +390,7 @@ void process_packet(int client_id, unsigned char* p)
 				cl.vl.unlock();
 				send_put_object(cl._id, other);
 
-				if (true == is_npc(other))
-				{
-					timer_queue.push(SetNpcMove(other));
-					continue;
-				}
+				if (true == is_npc(other)) continue;
 
 				clients[other].vl.lock();
 				if (0 == clients[other].viewlist.count(cl._id)) {
@@ -527,8 +531,48 @@ void worker()
 			do_npc_move(client_id);
 			break;
 		}
+		case OP_PLAYER_MOVE: {
+			lua_State* L = clients[client_id].L;
+			lua_getglobal(L, "event_player_move");
+			lua_pushnumber(L, exp_over->_target);
+			lua_pcall(L, 1, 0, 0);
+			delete exp_over;
+			break;
+		}
 		}
 	}
+}
+
+int API_SendMessage(lua_State* L)
+{
+	int my_id = (int)lua_tointeger(L, -3);
+	int user_id = (int)lua_tointeger(L, -2);
+	char* mess = (char*)lua_tostring(L, -1);
+
+	lua_pop(L, 4);
+
+	send_chat_packet(user_id, my_id, mess);
+	return 0;
+}
+
+int API_get_x(lua_State* L)
+{
+	int user_id =
+		(int)lua_tointeger(L, -1);
+	lua_pop(L, 2);
+	int x = clients[user_id].x;
+	lua_pushnumber(L, x);
+	return 1;
+}
+
+int API_get_y(lua_State* L)
+{
+	int user_id =
+		(int)lua_tointeger(L, -1);
+	lua_pop(L, 2);
+	int y = clients[user_id].y;
+	lua_pushnumber(L, y);
+	return 1;
 }
 
 void Initialize_NPC()
@@ -542,15 +586,23 @@ void Initialize_NPC()
 		clients[i]._type = 1;
 		clients[i]._is_active = false;
 
-		lua_State*L=clients[i].L=clients[i.]
+		lua_State* L = clients[i].L = luaL_newstate();
+		luaL_openlibs(L);
+		int error = luaL_loadfile(L, "monster.lua") ||
+			lua_pcall(L, 0, 0, 0);
+		lua_getglobal(L, "set_uid");
+		lua_pushnumber(L, i);
+		lua_pcall(L, 1, 1, 0);
+		lua_pop(L, 1);// eliminate set_uid from stack after call
 
+		lua_register(L, "API_SendMessage", API_SendMessage);
+		lua_register(L, "API_get_x", API_get_x);
+		lua_register(L, "API_get_y", API_get_y);
 	}
 }
 
 void do_npc_move(int npc_id)
 {
-	timer_event t;
-
 	unordered_set <int> old_viewlist;
 	unordered_set <int> new_viewlist;
 
@@ -558,12 +610,9 @@ void do_npc_move(int npc_id)
 		if (obj._state != ST_INGAME)
 			continue;
 		if (false == is_player(obj._id))
-			break;
+			continue;
 		if (true == is_near(npc_id, obj._id))
-		{
 			old_viewlist.insert(obj._id);
-
-		}
 	}
 	auto& x = clients[npc_id].x;
 	auto& y = clients[npc_id].y;
@@ -577,12 +626,9 @@ void do_npc_move(int npc_id)
 		if (obj._state != ST_INGAME)
 			continue;
 		if (false == is_player(obj._id))
-			break;
+			continue;
 		if (true == is_near(npc_id, obj._id))
-		{
 			new_viewlist.insert(obj._id);
-			timer_queue.push(SetNpcMove(npc_id));
-		}
 	}
 	// 새로 시야에 들어온 플레이어
 	for (auto pl : new_viewlist) {
@@ -591,11 +637,9 @@ void do_npc_move(int npc_id)
 			clients[pl].viewlist.insert(npc_id);
 			clients[pl].vl.unlock();
 			send_put_object(pl, npc_id);
-
 		}
 		else {
 			send_move_packet(pl, npc_id);
-
 		}
 	}
 	// 시야에서 사라지는 경우
@@ -620,7 +664,6 @@ void do_ai()
 			ex_over->_comp_op = OP_NPC_MOVE;
 			PostQueuedCompletionStatus(g_h_iocp, 1, npc._id, &ex_over->_wsa_over);
 			// do_npc_move(npc._id);
-
 		}
 		auto end_t = chrono::system_clock::now();
 		if (end_t - start_t < 1s) {
@@ -639,23 +682,16 @@ void do_timer() {
 	while (true) {
 		while (true) {
 			timer_event ev;
-			if (!timer_queue.try_pop(ev))break;
-			auto start_t = chrono::system_clock::now();
-			if (ev.start_time <= start_t) {
-				EXP_OVER* ex_over = new EXP_OVER;
-				ex_over->_comp_op = OP_NPC_MOVE;
-				PostQueuedCompletionStatus(g_h_iocp, 1, ev.obj_id, &ex_over->_wsa_over);
+			timer_queue.try_pop(ev);
+			if (ev.start_time <= chrono::system_clock::now()) {
+				// exec_event;
 			}
-			else {//ev.start_time > start_t
-				//timer_queue.push(ev);	// timer_queue에 넣지 않고 최적화 필요// 1457명
-				this_thread::sleep_for(ev.start_time - start_t);
-				EXP_OVER* ex_over = new EXP_OVER;
-				ex_over->_comp_op = OP_NPC_MOVE;
-				PostQueuedCompletionStatus(g_h_iocp, 1, ev.obj_id, &ex_over->_wsa_over);
-				//break;
+			else {
+				timer_queue.push(ev);	// timer_queue에 넣지 않고 최적화 필요
+				break;
 			}
 		}
-		//this_thread::sleep_for(10ms);
+		this_thread::sleep_for(10ms);
 	}
 }
 
@@ -697,7 +733,7 @@ int main()
 	vector <thread> worker_threads;
 	//thread ai_thread{ do_ai };
 	thread timer_thread{ do_timer };
-	for (int i = 0; i < 12; ++i)
+	for (int i = 0; i < 6; ++i)
 		worker_threads.emplace_back(worker);
 	for (auto& th : worker_threads)
 		th.join();
@@ -713,12 +749,3 @@ int main()
 }
 
 
-timer_event SetNpcMove(int id)
-{
-	timer_event t;
-	t.ev = EVENT_NPC_MOVE;
-	t.obj_id = id;
-	t.start_time = chrono::system_clock::now() + 1s;
-	t.target_id = 1;
-	return t;
-}

@@ -2,12 +2,13 @@
 
 const short SERVER_PORT = 4000;
 
-const int  WORLD_HEIGHT = 2000;
-const int  WORLD_WIDTH = 2000;
+const int  WORLD_HEIGHT = 300;
+const int  WORLD_WIDTH = 300;
 const int  MAX_NAME_SIZE = 20;
+const int  MAX_CHAT_SIZE = 100;
 const int  MAX_USER = 10000;
 //const int  MAX_NPC = 200000;
-const int  MAX_NPC = 200000;
+const int  MAX_NPC = 10000;
 constexpr int NPC_ID_START = MAX_USER;
 constexpr int NPC_ID_END = MAX_USER + MAX_NPC - 1;
 
@@ -18,6 +19,7 @@ const char SC_PACKET_LOGIN_OK = 1;
 const char SC_PACKET_MOVE = 2;
 const char SC_PACKET_PUT_OBJECT = 3;
 const char SC_PACKET_REMOVE_OBJECT = 4;
+const char SC_PACKET_CHAT = 5;
 
 #pragma pack (push, 1)
 struct cs_packet_login {
@@ -61,5 +63,12 @@ struct sc_packet_remove_object {
 	unsigned char size;
 	char type;
 	int id;
+};
+
+struct sc_packet_chat {
+	unsigned char size;
+	char type;
+	int id;
+	char message[MAX_CHAT_SIZE];
 };
 #pragma pack(pop)
