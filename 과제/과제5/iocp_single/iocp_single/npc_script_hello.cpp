@@ -610,7 +610,7 @@ void do_npc_move(int npc_id)
 		if (obj._state != ST_INGAME)
 			continue;
 		if (false == is_player(obj._id))
-			continue;
+			break;
 		if (true == is_near(npc_id, obj._id))
 			old_viewlist.insert(obj._id);
 	}
@@ -626,7 +626,7 @@ void do_npc_move(int npc_id)
 		if (obj._state != ST_INGAME)
 			continue;
 		if (false == is_player(obj._id))
-			continue;
+			break;
 		if (true == is_near(npc_id, obj._id))
 			new_viewlist.insert(obj._id);
 	}
@@ -682,16 +682,23 @@ void do_timer() {
 	while (true) {
 		while (true) {
 			timer_event ev;
-			timer_queue.try_pop(ev);
-			if (ev.start_time <= chrono::system_clock::now()) {
-				// exec_event;
+			if (!timer_queue.try_pop(ev))break;
+			auto start_t = chrono::system_clock::now();
+			if (ev.start_time <= start_t) {
+				EXP_OVER* ex_over = new EXP_OVER;
+				ex_over->_comp_op = OP_NPC_MOVE;
+				PostQueuedCompletionStatus(g_h_iocp, 1, ev.obj_id, &ex_over->_wsa_over);
 			}
-			else {
-				timer_queue.push(ev);	// timer_queue에 넣지 않고 최적화 필요
-				break;
+			else {//ev.start_time > start_t
+				//timer_queue.push(ev);	// timer_queue에 넣지 않고 최적화 필요// 1457명
+				this_thread::sleep_for(ev.start_time - start_t);
+				EXP_OVER* ex_over = new EXP_OVER;
+				ex_over->_comp_op = OP_NPC_MOVE;
+				PostQueuedCompletionStatus(g_h_iocp, 1, ev.obj_id, &ex_over->_wsa_over);
+				//break;
 			}
 		}
-		this_thread::sleep_for(10ms);
+		//this_thread::sleep_for(10ms);
 	}
 }
 
@@ -733,7 +740,7 @@ int main()
 	vector <thread> worker_threads;
 	//thread ai_thread{ do_ai };
 	thread timer_thread{ do_timer };
-	for (int i = 0; i < 6; ++i)
+	for (int i = 0; i < 12; ++i)
 		worker_threads.emplace_back(worker);
 	for (auto& th : worker_threads)
 		th.join();

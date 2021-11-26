@@ -1,7 +1,8 @@
 ﻿  npc_script_hello.cpp
-  Previous IPDB not found, fall back to full compilation.
 LINK : warning LNK4098: 'LIBCMT' defaultlib가 다른 라이브러리와 충돌합니다. /NODEFAULTLIB:library를 사용하십시오.
   코드를 생성하고 있습니다.
-  All 529 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
+  514 of 522 functions (98.5%) were compiled, the rest were copied from previous compilation.
+    10 functions were new in current compilation
+    1 functions had inline decision re-evaluated but remain unchanged
   코드를 생성했습니다.
   iocp_single.vcxproj -> C:\Users\undug\Documents\GitHub\gamserverprogramming_2021\과제\과제5\iocp_single\x64\Release\iocp_single.exe

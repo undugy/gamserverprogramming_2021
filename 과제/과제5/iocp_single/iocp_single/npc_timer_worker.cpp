@@ -14,7 +14,7 @@ using namespace std;
 #pragma comment (lib, "MSWSock.LIB")
 
 const int BUFSIZE = 256;
-const int RANGE = 3;
+const int RANGE = 5;
 
 HANDLE g_h_iocp;
 SOCKET g_s_socket;
