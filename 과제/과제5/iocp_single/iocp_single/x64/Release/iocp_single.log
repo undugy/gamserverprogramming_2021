@@ -1,8 +1,8 @@
 ﻿  npc_script_hello.cpp
 LINK : warning LNK4098: 'LIBCMT' defaultlib가 다른 라이브러리와 충돌합니다. /NODEFAULTLIB:library를 사용하십시오.
   코드를 생성하고 있습니다.
-  4 of 538 functions ( 0.7%) were compiled, the rest were copied from previous compilation.
+  34 of 545 functions ( 6.2%) were compiled, the rest were copied from previous compilation.
     0 functions were new in current compilation
-    2 functions had inline decision re-evaluated but remain unchanged
+    24 functions had inline decision re-evaluated but remain unchanged
   코드를 생성했습니다.
   iocp_single.vcxproj -> C:\Users\undug\Documents\GitHub\gamserverprogramming_2021\과제\과제5\iocp_single\x64\Release\iocp_single.exe

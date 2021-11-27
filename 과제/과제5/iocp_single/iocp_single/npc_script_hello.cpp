@@ -715,12 +715,12 @@ void do_timer() {
 					PostQueuedCompletionStatus(g_h_iocp, 1, ev.obj_id, &ex_over->_wsa_over);
 				}
 				else {//ev.start_time > start_t
-					timer_queue.push(ev);	// timer_queue에 넣지 않고 최적화 필요// 1457명
-					//this_thread::sleep_for(ev.start_time - start_t);
-					//EXP_OVER* ex_over = new EXP_OVER;
-					//ex_over->_comp_op = OP_NPC_MOVE;
-					//PostQueuedCompletionStatus(g_h_iocp, 1, ev.obj_id, &ex_over->_wsa_over);
-					//break;
+					//timer_queue.push(ev);	// timer_queue에 넣지 않고 최적화 필요// 1457명
+					this_thread::sleep_for(ev.start_time - start_t);
+					EXP_OVER* ex_over = new EXP_OVER;
+					ex_over->_comp_op = OP_NPC_MOVE;
+					PostQueuedCompletionStatus(g_h_iocp, 1, ev.obj_id, &ex_over->_wsa_over);
+					break;
 				}
 				break;
 			}
