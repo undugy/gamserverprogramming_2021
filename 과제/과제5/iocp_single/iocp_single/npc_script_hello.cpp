@@ -575,6 +575,22 @@ int API_get_y(lua_State* L)
 	return 1;
 }
 
+int API_timer_move(lua_State* L)
+{
+	int my_id = (int)lua_tointeger(L, -2);
+	int user_id = (int)lua_tointeger(L, -1);
+	for (int i = 1; i <=3; ++i)
+	{
+		timer_event t;
+		t.ev = EVENT_NPC_MOVE;
+		t.obj_id = my_id;
+		t.target_id = user_id;
+		t.start_time = chrono::system_clock::now() + (1s*i);
+		timer_queue.push(t);
+	}
+	return 0;
+}
+
 void Initialize_NPC()
 {
 	for (int i = NPC_ID_START; i <= NPC_ID_END; ++i) {
@@ -598,6 +614,7 @@ void Initialize_NPC()
 		lua_register(L, "API_SendMessage", API_SendMessage);
 		lua_register(L, "API_get_x", API_get_x);
 		lua_register(L, "API_get_y", API_get_y);
+		lua_register(L, "API_timer_move", API_timer_move);
 	}
 }
 
@@ -682,16 +699,23 @@ void do_timer() {
 	while (true) {
 		while (true) {
 			timer_event ev;
-			timer_queue.try_pop(ev);
-			if (ev.start_time <= chrono::system_clock::now()) {
-				// exec_event;
+			if (!timer_queue.try_pop(ev))break;
+			auto start_t = chrono::system_clock::now();
+			if (ev.start_time <= start_t) {
+				EXP_OVER* ex_over = new EXP_OVER;
+				ex_over->_comp_op = OP_NPC_MOVE;
+				PostQueuedCompletionStatus(g_h_iocp, 1, ev.obj_id, &ex_over->_wsa_over);
 			}
-			else {
-				timer_queue.push(ev);	// timer_queue에 넣지 않고 최적화 필요
-				break;
+			else {//ev.start_time > start_t
+				//timer_queue.push(ev);	// timer_queue에 넣지 않고 최적화 필요// 1457명
+				this_thread::sleep_for(ev.start_time - start_t);
+				EXP_OVER* ex_over = new EXP_OVER;
+				ex_over->_comp_op = OP_NPC_MOVE;
+				PostQueuedCompletionStatus(g_h_iocp, 1, ev.obj_id, &ex_over->_wsa_over);
+				//break;
 			}
 		}
-		this_thread::sleep_for(10ms);
+		//this_thread::sleep_for(10ms);
 	}
 }
 
