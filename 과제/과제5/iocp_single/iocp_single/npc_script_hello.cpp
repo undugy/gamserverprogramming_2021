@@ -727,8 +727,12 @@ void do_timer() {
 			case EVENT_PLAYER_MOVE: {
 				auto start_t = chrono::system_clock::now();
 				if (ev.start_time <= start_t) {
-					char a[5] = { 'B','Y','E','\0' };
-					send_chat_packet(ev.target_id, ev.obj_id, a);
+					//char a[5] = { 'B','Y','E','\0' };
+					//send_chat_packet(ev.target_id, ev.obj_id, a);
+					lua_State* L = clients[ev.obj_id].L;
+					lua_getglobal(L, "event_bye");
+					lua_pushnumber(L, ev.target_id);
+					lua_pcall(L, 1, 0, 0);
 				}
 				else {//ev.start_time > start_t
 					timer_queue.push(ev);	// timer_queue에 넣지 않고 최적화 필요// 1457명
