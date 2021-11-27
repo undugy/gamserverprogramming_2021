@@ -26,7 +26,7 @@ const int RANGE = 3;
 HANDLE g_h_iocp;
 SOCKET g_s_socket;
 
-enum EVENT_TYPE { EVENT_NPC_MOVE };
+enum EVENT_TYPE { EVENT_NPC_MOVE,EVENT_PLAYER_MOVE };
 
 struct timer_event {
 	int obj_id;
@@ -44,7 +44,7 @@ concurrency::concurrent_priority_queue <timer_event> timer_queue;
 
 void error_display(int err_no);
 void do_npc_move(int npc_id);
-
+timer_event SetNpcMove(int id);
 enum COMP_OP { OP_RECV, OP_SEND, OP_ACCEPT, OP_NPC_MOVE, OP_PLAYER_MOVE };
 class EXP_OVER {
 public:
@@ -333,6 +333,10 @@ void process_packet(int client_id, unsigned char* p)
 			clients[client_id].viewlist.insert(other._id);
 			clients[client_id].vl.unlock();
 
+			if (true == is_npc(other._id)) {
+
+				timer_queue.push(SetNpcMove(other._id));
+			}
 			sc_packet_put_object packet;
 			packet.id = other._id;
 			strcpy_s(packet.name, other.name);
@@ -390,7 +394,7 @@ void process_packet(int client_id, unsigned char* p)
 				cl.vl.unlock();
 				send_put_object(cl._id, other);
 
-				if (true == is_npc(other)) continue;
+				if (true == is_npc(other)) { timer_queue.push(SetNpcMove(other)); continue; }
 
 				clients[other].vl.lock();
 				if (0 == clients[other].viewlist.count(cl._id)) {
@@ -543,6 +547,20 @@ void worker()
 	}
 }
 
+int API_SetPlayerMoveEV(lua_State* L)
+{
+	int my_id = (int)lua_tointeger(L, -2);
+	int user_id = (int)lua_tointeger(L, -1);
+	timer_event t;
+	t.ev = EVENT_PLAYER_MOVE;
+	t.obj_id = my_id;
+	t.start_time = chrono::system_clock::now() + 3s;
+	t.target_id = user_id;
+	lua_pop(L, 2);
+	timer_queue.push(t);
+	return 0;
+}
+
 int API_SendMessage(lua_State* L)
 {
 	int my_id = (int)lua_tointeger(L, -3);
@@ -598,6 +616,7 @@ void Initialize_NPC()
 		lua_register(L, "API_SendMessage", API_SendMessage);
 		lua_register(L, "API_get_x", API_get_x);
 		lua_register(L, "API_get_y", API_get_y);
+		lua_register(L, "API_SetPlayerMoveEV", API_SetPlayerMoveEV);
 	}
 }
 
@@ -627,8 +646,11 @@ void do_npc_move(int npc_id)
 			continue;
 		if (false == is_player(obj._id))
 			break;
-		if (true == is_near(npc_id, obj._id))
+		if (true == is_near(npc_id, obj._id)) {
+
 			new_viewlist.insert(obj._id);
+			timer_queue.push(SetNpcMove(npc_id));
+		}
 	}
 	// 새로 시야에 들어온 플레이어
 	for (auto pl : new_viewlist) {
@@ -682,23 +704,42 @@ void do_timer() {
 	while (true) {
 		while (true) {
 			timer_event ev;
-			if (!timer_queue.try_pop(ev))break;
-			auto start_t = chrono::system_clock::now();
-			if (ev.start_time <= start_t) {
-				EXP_OVER* ex_over = new EXP_OVER;
-				ex_over->_comp_op = OP_NPC_MOVE;
-				PostQueuedCompletionStatus(g_h_iocp, 1, ev.obj_id, &ex_over->_wsa_over);
+			if (!timer_queue.try_pop(ev))continue;
+			switch (ev.ev)
+			{
+			case EVENT_NPC_MOVE: {
+				auto start_t = chrono::system_clock::now();
+				if (ev.start_time <= start_t) {
+					EXP_OVER* ex_over = new EXP_OVER;
+					ex_over->_comp_op = OP_NPC_MOVE;
+					PostQueuedCompletionStatus(g_h_iocp, 1, ev.obj_id, &ex_over->_wsa_over);
+				}
+				else {//ev.start_time > start_t
+					timer_queue.push(ev);	// timer_queue에 넣지 않고 최적화 필요// 1457명
+					//this_thread::sleep_for(ev.start_time - start_t);
+					//EXP_OVER* ex_over = new EXP_OVER;
+					//ex_over->_comp_op = OP_NPC_MOVE;
+					//PostQueuedCompletionStatus(g_h_iocp, 1, ev.obj_id, &ex_over->_wsa_over);
+					//break;
+				}
+				break;
 			}
-			else {//ev.start_time > start_t
-				//timer_queue.push(ev);	// timer_queue에 넣지 않고 최적화 필요// 1457명
-				this_thread::sleep_for(ev.start_time - start_t);
-				EXP_OVER* ex_over = new EXP_OVER;
-				ex_over->_comp_op = OP_NPC_MOVE;
-				PostQueuedCompletionStatus(g_h_iocp, 1, ev.obj_id, &ex_over->_wsa_over);
-				//break;
+			case EVENT_PLAYER_MOVE: {
+				auto start_t = chrono::system_clock::now();
+				if (ev.start_time <= start_t) {
+					char a[5] = { 'B','Y','E','\0' };
+					send_chat_packet(ev.target_id, ev.obj_id, a);
+				}
+				else {//ev.start_time > start_t
+					timer_queue.push(ev);	// timer_queue에 넣지 않고 최적화 필요// 1457명
+					
+					break;
+				}
+				break;
+			}
 			}
 		}
-		//this_thread::sleep_for(10ms);
+		this_thread::sleep_for(10ms);
 	}
 }
 
@@ -756,3 +797,12 @@ int main()
 }
 
 
+timer_event SetNpcMove(int id)
+{
+	timer_event t;
+	t.ev = EVENT_NPC_MOVE;
+	t.obj_id = id;
+	t.start_time = chrono::system_clock::now() + 1s;
+	t.target_id = 1;
+	return t;
+}

@@ -12,6 +12,12 @@ function event_player_move(player)
    if (player_x == my_x) then
       if (player_y == my_y) then
          API_SendMessage(myid, player, "HELLO");
+         API_SetPlayerMoveEV(myid,player);
       end
    end
+end
+
+
+function event_bye( player )
+	API_SendMessage(myid,player,"BYE");
 end
