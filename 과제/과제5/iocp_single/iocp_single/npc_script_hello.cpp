@@ -26,7 +26,7 @@ const int RANGE = 3;
 HANDLE g_h_iocp;
 SOCKET g_s_socket;
 
-enum EVENT_TYPE { EVENT_NPC_MOVE };
+enum EVENT_TYPE { EVENT_NPC_MOVE,EVENT_PLAYER_MOVE };
 
 struct timer_event {
 	int obj_id;
@@ -579,6 +579,7 @@ int API_timer_move(lua_State* L)
 {
 	int my_id = (int)lua_tointeger(L, -2);
 	int user_id = (int)lua_tointeger(L, -1);
+	
 	for (int i = 1; i <=3; ++i)
 	{
 		timer_event t;
@@ -588,6 +589,12 @@ int API_timer_move(lua_State* L)
 		t.start_time = chrono::system_clock::now() + (1s*i);
 		timer_queue.push(t);
 	}
+	timer_event t1;
+	t1.ev = EVENT_PLAYER_MOVE;
+	t1.obj_id = my_id;
+	t1.target_id = user_id;
+	t1.start_time = chrono::system_clock::now() + 4s;
+	timer_queue.push(t1);
 	return 0;
 }
 
@@ -701,21 +708,36 @@ void do_timer() {
 			timer_event ev;
 			if (!timer_queue.try_pop(ev))break;
 			auto start_t = chrono::system_clock::now();
-			if (ev.start_time <= start_t) {
-				EXP_OVER* ex_over = new EXP_OVER;
-				ex_over->_comp_op = OP_NPC_MOVE;
-				PostQueuedCompletionStatus(g_h_iocp, 1, ev.obj_id, &ex_over->_wsa_over);
+			if (ev.ev == EVENT_NPC_MOVE) {
+				if (ev.start_time <= start_t) {
+					EXP_OVER* ex_over = new EXP_OVER;
+					ex_over->_comp_op = OP_NPC_MOVE;
+					PostQueuedCompletionStatus(g_h_iocp, 1, ev.obj_id, &ex_over->_wsa_over);
+				}
+				else {//ev.start_time > start_t
+					//timer_queue.push(ev);	// timer_queue에 넣지 않고 최적화 필요// 1457명
+					this_thread::sleep_for(ev.start_time - start_t);
+					EXP_OVER* ex_over = new EXP_OVER;
+					ex_over->_comp_op = OP_NPC_MOVE;
+					PostQueuedCompletionStatus(g_h_iocp, 1, ev.obj_id, &ex_over->_wsa_over);
+					//break;
+				}
 			}
-			else {//ev.start_time > start_t
-				//timer_queue.push(ev);	// timer_queue에 넣지 않고 최적화 필요// 1457명
-				this_thread::sleep_for(ev.start_time - start_t);
-				EXP_OVER* ex_over = new EXP_OVER;
-				ex_over->_comp_op = OP_NPC_MOVE;
-				PostQueuedCompletionStatus(g_h_iocp, 1, ev.obj_id, &ex_over->_wsa_over);
-				//break;
+			else {
+				if (ev.start_time <= start_t) {
+					lua_State* L = clients[ev.obj_id].L;
+					lua_getglobal(L, "say_bye");
+					lua_pushnumber(L, ev.target_id);
+					lua_pcall(L, 1, 0, 0);
+				}
+				else
+				{
+					timer_queue.push(ev);
+					break;
+				}
 			}
 		}
-		//this_thread::sleep_for(10ms);
+		this_thread::sleep_for(10ms);
 	}
 }
 

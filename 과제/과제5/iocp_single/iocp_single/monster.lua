@@ -17,3 +17,7 @@ function event_player_move(player)
    end
 end
 
+function say_bye( player )
+	API_SendMessage(myid, player, "BYE");
+end
+
