@@ -145,15 +145,22 @@
     <None Include="monster.lua" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="define.h" />
+    <ClInclude Include="EXP_OVER.h" />
+    <ClInclude Include="header.h" />
     <ClInclude Include="include\lauxlib.h" />
     <ClInclude Include="include\lua.h" />
     <ClInclude Include="include\lua.hpp" />
     <ClInclude Include="include\luaconf.h" />
     <ClInclude Include="include\lualib.h" />
     <ClInclude Include="protocol.h" />
+    <ClInclude Include="SERVER_MAIN.h" />
+    <ClInclude Include="type.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="EXP_OVER.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="SERVER_MAIN.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

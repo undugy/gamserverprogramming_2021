@@ -13,6 +13,9 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="헤더 파일\lua">
+      <UniqueIdentifier>{5213409d-cd1f-43b2-b46e-f1328ec9c7b6}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <Library Include="lua54.lib">
@@ -28,24 +31,45 @@
     <ClInclude Include="protocol.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
+    <ClInclude Include="include\lualib.h">
+      <Filter>헤더 파일\lua</Filter>
+    </ClInclude>
     <ClInclude Include="include\lauxlib.h">
-      <Filter>헤더 파일</Filter>
+      <Filter>헤더 파일\lua</Filter>
     </ClInclude>
     <ClInclude Include="include\lua.h">
-      <Filter>헤더 파일</Filter>
+      <Filter>헤더 파일\lua</Filter>
     </ClInclude>
     <ClInclude Include="include\lua.hpp">
-      <Filter>헤더 파일</Filter>
+      <Filter>헤더 파일\lua</Filter>
     </ClInclude>
     <ClInclude Include="include\luaconf.h">
+      <Filter>헤더 파일\lua</Filter>
+    </ClInclude>
+    <ClInclude Include="header.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
-    <ClInclude Include="include\lualib.h">
+    <ClInclude Include="define.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="type.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="EXP_OVER.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="SERVER_MAIN.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="EXP_OVER.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="SERVER_MAIN.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
   </ItemGroup>
