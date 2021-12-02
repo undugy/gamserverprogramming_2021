@@ -337,11 +337,13 @@ int main()
 	}
 
 	client_initialize();
-	string name{ "PL" };
-	auto tt = chrono::duration_cast<chrono::milliseconds>
-		(chrono::system_clock::now().
-			time_since_epoch()).count();
-	name += to_string(tt % 1000);
+	//string name{ "PL" };
+	string name;
+	cin >> name;
+	//auto tt = chrono::duration_cast<chrono::milliseconds>
+	//	(chrono::system_clock::now().
+	//		time_since_epoch()).count();
+	//name += to_string(tt % 1000);
 	send_login_packet(name);	
 	avatar.set_name(name.c_str());
 	sf::RenderWindow window(sf::VideoMode(WINDOW_WIDTH, WINDOW_HEIGHT), "2D CLIENT");

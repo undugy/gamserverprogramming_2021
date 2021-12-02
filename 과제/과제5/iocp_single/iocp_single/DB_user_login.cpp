@@ -266,15 +266,85 @@ void Disconnect(int c_id)
 	clients[c_id].state_lock.unlock();
 }
 
+bool search_user_data(int client_id,char* name)
+{
+	SQLHSTMT hstmt = 0;
+	SQLRETURN retcode;
+	SQLWCHAR p_id[MAX_NAME_SIZE+1];
+	SQLINTEGER p_x,p_y;
+	SQLLEN cbP_x = 0, cbP_y = 0, cbP_id = 0;
+	CLIENT& cl = clients[client_id];
+	wchar_t exec[100] = L"EXEC find_user @Param=N'";
+	size_t newsize = strlen(name) + 1;
+	wchar_t* wcstring = new wchar_t[newsize];
+	wchar_t* comp_id = NULL;
+	size_t convertedChars = 0;
+	mbstowcs_s(&convertedChars, wcstring, newsize, name, _TRUNCATE);
+	wcscat_s(exec, 100, wcstring);
+	wcscat_s(exec, 100,L"';");
+	wcout << exec << endl;
+	retcode = SQLAllocHandle(SQL_HANDLE_STMT, hdbc, &hstmt);
+	retcode = SQLExecDirect(hstmt, (SQLWCHAR*)exec, SQL_NTS);
+	if (retcode == SQL_SUCCESS || retcode == SQL_SUCCESS_WITH_INFO) 
+	{
+		
+		retcode = SQLBindCol(hstmt, 1, SQL_C_WCHAR, p_id, MAX_NAME_SIZE+1, &cbP_id);
+		retcode = SQLBindCol(hstmt, 2, SQL_C_LONG, &p_x, 100, &cbP_x);
+		retcode = SQLBindCol(hstmt, 3, SQL_C_LONG,&p_y, 100, &cbP_y);
+		for (int i = 0; ; i++) {
+			retcode = SQLFetch(hstmt);
+			if (retcode == SQL_ERROR || retcode == SQL_SUCCESS_WITH_INFO)
+				HandleDiagnosticRecord(hstmt, SQL_HANDLE_STMT, retcode);
+			if (retcode == SQL_SUCCESS || retcode == SQL_SUCCESS_WITH_INFO)
+			{
+				//replace wprintf with printf
+				//%S with %ls
+				//warning C4477: 'wprintf' : format string '%S' requires an argument of type 'char *'
+				//but variadic argument 2 has type 'SQLWCHAR *'
+				//wprintf(L"%d: %S %S %S\n", i + 1, sCustID, szName, szPhone);  
+				//wprintf(L"%d: %d %s %d\n", i + 1, p_id, p_Name, p_level);
+				
+				wprintf(L"아이디 %s | 길이:%d, 받은거 %s | 길이:%d", p_id, wcslen(p_id),wcstring, wcslen(wcstring));
+
+				cout << wcscmp(wcstring, p_id) << endl;
+				if (wcscmp(wcstring, p_id) == 0)
+				{
+					cl.x = p_x;
+					cl.y = p_y;
+					strcpy_s(cl.name, name);
+					delete[]wcstring;
+					return true;
+				}
+			}
+			else
+			{
+				printf("없엉\n");
+				delete[]wcstring;
+				return false;
+			}
+		}
+	}
+	else {
+		HandleDiagnosticRecord(hstmt, SQL_HANDLE_STMT, retcode);
+	}
+	if (retcode == SQL_SUCCESS || retcode == SQL_SUCCESS_WITH_INFO) {
+		SQLCancel(hstmt);
+		SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
+	}
+}
+
 void process_packet(int client_id, unsigned char* p)
 {
 	unsigned char packet_type = p[1];
 	CLIENT& cl = clients[client_id];
 	timer_event t;
+	
 	switch (packet_type) {
 	case CS_PACKET_LOGIN: {
 		cs_packet_login* packet = reinterpret_cast<cs_packet_login*>(p);
-		strcpy_s(cl.name, packet->name);
+		if (false == search_user_data(client_id, packet->name))
+			break;
+		//strcpy_s(cl.name, packet->name);
 		send_login_ok_packet(client_id);
 
 		CLIENT& cl = clients[client_id];
