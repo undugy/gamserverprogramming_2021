@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.31424.327
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "odbc_실습", "odbc_실습\odbc_실습.vcxproj", "{168714A7-B88C-4394-94D6-AE8231F3C1EA}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Debug|x86 = Debug|x86
+		Release|x64 = Release|x64
+		Release|x86 = Release|x86
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{168714A7-B88C-4394-94D6-AE8231F3C1EA}.Debug|x64.ActiveCfg = Debug|x64
+		{168714A7-B88C-4394-94D6-AE8231F3C1EA}.Debug|x64.Build.0 = Debug|x64
+		{168714A7-B88C-4394-94D6-AE8231F3C1EA}.Debug|x86.ActiveCfg = Debug|Win32
+		{168714A7-B88C-4394-94D6-AE8231F3C1EA}.Debug|x86.Build.0 = Debug|Win32
+		{168714A7-B88C-4394-94D6-AE8231F3C1EA}.Release|x64.ActiveCfg = Release|x64
+		{168714A7-B88C-4394-94D6-AE8231F3C1EA}.Release|x64.Build.0 = Release|x64
+		{168714A7-B88C-4394-94D6-AE8231F3C1EA}.Release|x86.ActiveCfg = Release|Win32
+		{168714A7-B88C-4394-94D6-AE8231F3C1EA}.Release|x86.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {26340618-51CA-407E-BDDD-B39BD2F53804}
+	EndGlobalSection
+EndGlobal
