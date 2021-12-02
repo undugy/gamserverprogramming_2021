@@ -30,6 +30,9 @@
     <ClCompile Include="npc_script_hello.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
+    <ClCompile Include="DB_user_login.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="protocol.h">
