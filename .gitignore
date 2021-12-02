@@ -1,6 +1,5 @@
 
-# Created by https://www.toptal.com/developers/gitignore/api/visualstudio,c++
-# Edit at https://www.toptal.com/developers/gitignore?templates=visualstudio,c++
+
 
 ### C++ ###
 # Prerequisites
@@ -61,6 +60,9 @@ mono_crash.*
 [Rr]elease/
 [Rr]eleases/
 x64/
+
+.vs/
+
 x86/
 [Ww][Ii][Nn]32/
 [Aa][Rr][Mm]/
@@ -427,4 +429,5 @@ FodyWeavers.xsd
 ### VisualStudio Patch ###
 # Additional files built by Visual Studio
 
-# End of 
+
+
