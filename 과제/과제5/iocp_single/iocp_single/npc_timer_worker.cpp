@@ -14,7 +14,7 @@ using namespace std;
 #pragma comment (lib, "MSWSock.LIB")
 
 const int BUFSIZE = 256;
-const int RANGE = 3;
+const int RANGE = 5;
 
 HANDLE g_h_iocp;
 SOCKET g_s_socket;
@@ -255,7 +255,7 @@ void process_packet(int client_id, unsigned char* p)
 		cs_packet_login* packet = reinterpret_cast<cs_packet_login*>(p);
 		strcpy_s(cl.name, packet->name);
 		send_login_ok_packet(client_id);
-	
+
 		CLIENT& cl = clients[client_id];
 		cl.state_lock.lock();
 		cl._state = ST_INGAME;
@@ -301,13 +301,13 @@ void process_packet(int client_id, unsigned char* p)
 
 			if (false == is_near(other._id, client_id))
 				continue;
-			 
+
 			clients[client_id].vl.lock();
 			clients[client_id].viewlist.insert(other._id);
 			clients[client_id].vl.unlock();
 
 			if (true == is_npc(other._id)) {
-				
+
 				timer_queue.push(SetNpcMove(other._id));
 			}
 
@@ -536,7 +536,7 @@ void Initialize_NPC()
 void do_npc_move(int npc_id)
 {
 	timer_event t;
-	
+
 	unordered_set <int> old_viewlist;
 	unordered_set <int> new_viewlist;
 
@@ -548,7 +548,7 @@ void do_npc_move(int npc_id)
 		if (true == is_near(npc_id, obj._id))
 		{
 			old_viewlist.insert(obj._id);
-			
+
 		}
 	}
 	auto& x = clients[npc_id].x;
@@ -577,11 +577,11 @@ void do_npc_move(int npc_id)
 			clients[pl].viewlist.insert(npc_id);
 			clients[pl].vl.unlock();
 			send_put_object(pl, npc_id);
-			
+
 		}
 		else {
 			send_move_packet(pl, npc_id);
-			
+
 		}
 	}
 	// 시야에서 사라지는 경우
@@ -606,7 +606,7 @@ void do_ai()
 			ex_over->_comp_op = OP_NPC_MOVE;
 			PostQueuedCompletionStatus(g_h_iocp, 1, npc._id, &ex_over->_wsa_over);
 			// do_npc_move(npc._id);
-			
+
 		}
 		auto end_t = chrono::system_clock::now();
 		if (end_t - start_t < 1s) {
@@ -621,11 +621,11 @@ void do_ai()
 }
 
 void do_timer() {
-	
+
 	while (true) {
 		while (true) {
 			timer_event ev;
-			if(!timer_queue.try_pop(ev))break;
+			if (!timer_queue.try_pop(ev))break;
 			auto start_t = chrono::system_clock::now();
 			if (ev.start_time <= start_t) {
 				EXP_OVER* ex_over = new EXP_OVER;

@@ -148,6 +148,7 @@ void ProcessPacket(int ci, unsigned char packet[])
 					   break;
 	case SC_PACKET_PUT_OBJECT: break;
 	case SC_PACKET_REMOVE_OBJECT: break;
+	case SC_PACKET_CHAT: break;
 	case SC_PACKET_LOGIN_OK:
 	{
 		g_clients[ci].connected = true;
