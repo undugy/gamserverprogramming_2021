@@ -7,7 +7,7 @@
 #include <mutex>
 #include <unordered_set>
 #include <concurrent_priority_queue.h>
-
+#include <sqlext.h>  
 #include "protocol.h"
 using namespace std;
 #pragma comment (lib, "WS2_32.LIB")
@@ -15,10 +15,13 @@ using namespace std;
 
 const int BUFSIZE = 256;
 const int RANGE = 5;
-
+const int NAME_LEN = 20;
 HANDLE g_h_iocp;
 SOCKET g_s_socket;
-
+SQLHENV henv;
+SQLHDBC hdbc;
+//SQLHSTMT hstmt = 0;
+//SQLHSTMT hstmt;
 enum EVENT_TYPE { EVENT_NPC_MOVE };
 
 struct timer_event {
@@ -37,7 +40,7 @@ concurrency::concurrent_priority_queue <timer_event> timer_queue;
 timer_event SetNpcMove(int id);
 void error_display(int err_no);
 void do_npc_move(int npc_id);
-
+void HandleDiagnosticRecord(SQLHANDLE hHandle, SQLSMALLINT hType, RETCODE RetCode);
 enum COMP_OP { OP_RECV, OP_SEND, OP_ACCEPT, OP_NPC_MOVE };
 class EXP_OVER {
 public:
@@ -128,6 +131,24 @@ array <CLIENT, MAX_USER + MAX_NPC> clients;
 // 0 - (MAX_USER - 1) : 플레이어
 // MAX_USER  - (MAX_USER + MAX_NPC) : NPC
 
+void HandleDiagnosticRecord(SQLHANDLE hHandle, SQLSMALLINT hType, RETCODE RetCode)
+{
+	SQLSMALLINT iRec = 0;
+	SQLINTEGER iError;
+	WCHAR wszMessage[1000];
+	WCHAR wszState[SQL_SQLSTATE_SIZE + 1];
+	if (RetCode == SQL_INVALID_HANDLE) {
+		fwprintf(stderr, L"Invalid handle!\n");
+		return;
+	}
+	while (SQLGetDiagRec(hType, hHandle, ++iRec, wszState, &iError, wszMessage,
+		(SQLSMALLINT)(sizeof(wszMessage) / sizeof(WCHAR)), (SQLSMALLINT*)NULL) == SQL_SUCCESS) {
+		// Hide data truncated..
+		if (wcsncmp(wszState, L"01004", 5)) {
+			fwprintf(stderr, L"[%5.5s] %s (%d)\n", wszState, wszMessage, iError);
+		}
+	}
+}
 void error_display(int err_no)
 {
 	WCHAR* lpMsgBuf;
@@ -427,6 +448,48 @@ void process_packet(int client_id, unsigned char* p)
 	}
 }
 
+void InitializeDB()
+{
+	//SQLHENV henv;
+	//SQLHDBC hdbc;
+	//SQLHSTMT hstmt = 0;
+	SQLRETURN retcode;
+	//SQLINTEGER p_id;
+	//SQLSMALLINT p_level;
+	//SQLWCHAR p_Name[NAME_LEN];
+	//SQLLEN cbName = 0, cbP_ID = 0, cbP_Level = 0;
+	
+	// Allocate environment handle  
+	retcode = SQLAllocHandle(SQL_HANDLE_ENV, SQL_NULL_HANDLE, &henv);
+
+	// Set the ODBC version environment attribute  
+	if (retcode == SQL_SUCCESS || retcode == SQL_SUCCESS_WITH_INFO) {
+		retcode = SQLSetEnvAttr(henv, SQL_ATTR_ODBC_VERSION, (SQLPOINTER*)SQL_OV_ODBC3, 0);
+
+		// Allocate connection handle  
+		if (retcode == SQL_SUCCESS || retcode == SQL_SUCCESS_WITH_INFO) {
+			retcode = SQLAllocHandle(SQL_HANDLE_DBC, henv, &hdbc);
+
+			// Set login timeout to 5 seconds  
+			if (retcode == SQL_SUCCESS || retcode == SQL_SUCCESS_WITH_INFO) {
+				SQLSetConnectAttr(hdbc, SQL_LOGIN_TIMEOUT, (SQLPOINTER)5, 0);
+
+				// Connect to data source  
+				retcode = SQLConnect(hdbc, (SQLWCHAR*)L"2017182020_WonSuk_ODBC", SQL_NTS, (SQLWCHAR*)NULL, 0, NULL, 0);
+
+				// Allocate statement handle  
+				if (retcode == SQL_SUCCESS || retcode == SQL_SUCCESS_WITH_INFO) {
+					cout << "ODBC Connected\n";
+					
+				}
+
+				
+			}
+		}
+	}
+}
+
+
 void worker()
 {
 	for (;;) {
@@ -647,6 +710,7 @@ void do_timer() {
 
 int main()
 {
+	setlocale(LC_ALL, "korean");
 	wcout.imbue(locale("korean"));
 	WSADATA WSAData;
 	WSAStartup(MAKEWORD(2, 2), &WSAData);
@@ -677,7 +741,7 @@ int main()
 		clients[i]._id = i;
 
 	cout << "Creating Worker Threads\n";
-
+	InitializeDB();
 	Initialize_NPC();
 
 	vector <thread> worker_threads;
@@ -694,6 +758,12 @@ int main()
 		if (ST_INGAME == cl._state)
 			Disconnect(cl._id);
 	}
+
+
+	SQLDisconnect(hdbc);
+	SQLFreeHandle(SQL_HANDLE_DBC, hdbc);
+	SQLFreeHandle(SQL_HANDLE_ENV, henv);
+
 	closesocket(g_s_socket);
 	WSACleanup();
 }

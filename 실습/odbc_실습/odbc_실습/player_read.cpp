@@ -79,7 +79,7 @@ int main() {
                     cout <<"ODBC Connected\n";
                     retcode = SQLAllocHandle(SQL_HANDLE_STMT, hdbc, &hstmt);
 
-                    retcode = SQLExecDirect(hstmt, (SQLWCHAR*)L"EXEC select_highlevel", SQL_NTS);//쓰다말았다
+                    retcode = SQLExecDirect(hstmt, (SQLWCHAR*)L"EXEC select_highlevel @Param=200", SQL_NTS);//쓰다말았다
                     if (retcode == SQL_SUCCESS || retcode == SQL_SUCCESS_WITH_INFO) {
 
                         // Bind columns 1, 2, and 3  
