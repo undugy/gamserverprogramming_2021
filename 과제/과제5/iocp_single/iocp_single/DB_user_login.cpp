@@ -274,15 +274,18 @@ bool search_user_data(int client_id,char* name)
 	SQLINTEGER p_x,p_y;
 	SQLLEN cbP_x = 0, cbP_y = 0, cbP_id = 0;
 	CLIENT& cl = clients[client_id];
-	wchar_t exec[100] = L"EXEC find_user @Param=N'";
+	wchar_t exec[100]; //= L"EXEC find_user @Param=N";
 	size_t newsize = strlen(name) + 1;
 	wchar_t* wcstring = new wchar_t[newsize];
-	wchar_t* comp_id = NULL;
+	
 	size_t convertedChars = 0;
 	mbstowcs_s(&convertedChars, wcstring, newsize, name, _TRUNCATE);
-	wcscat_s(exec, 100, wcstring);
+	/*wcscat_s(exec, 100, wcstring);
 	wcscat_s(exec, 100,L"';");
 	wcout << exec << endl;
+	*/
+	int len = swprintf_s(exec, 100, L"EXEC find_user @Param=N'%ls'", wcstring);
+	//wcout << exec << endl;
 	retcode = SQLAllocHandle(SQL_HANDLE_STMT, hdbc, &hstmt);
 	retcode = SQLExecDirect(hstmt, (SQLWCHAR*)exec, SQL_NTS);
 	if (retcode == SQL_SUCCESS || retcode == SQL_SUCCESS_WITH_INFO) 
@@ -297,24 +300,13 @@ bool search_user_data(int client_id,char* name)
 				HandleDiagnosticRecord(hstmt, SQL_HANDLE_STMT, retcode);
 			if (retcode == SQL_SUCCESS || retcode == SQL_SUCCESS_WITH_INFO)
 			{
-				//replace wprintf with printf
-				//%S with %ls
-				//warning C4477: 'wprintf' : format string '%S' requires an argument of type 'char *'
-				//but variadic argument 2 has type 'SQLWCHAR *'
-				//wprintf(L"%d: %S %S %S\n", i + 1, sCustID, szName, szPhone);  
-				//wprintf(L"%d: %d %s %d\n", i + 1, p_id, p_Name, p_level);
-				
-				wprintf(L"아이디 %s | 길이:%d, 받은거 %s | 길이:%d", p_id, wcslen(p_id),wcstring, wcslen(wcstring));
-
-				cout << wcscmp(wcstring, p_id) << endl;
-				if (wcscmp(wcstring, p_id) == 0)
-				{
 					cl.x = p_x;
 					cl.y = p_y;
 					strcpy_s(cl.name, name);
 					delete[]wcstring;
+					printf("플레이어 초기화");
 					return true;
-				}
+				
 			}
 			else
 			{
