@@ -1,8 +1,10 @@
 #define SFML_STATIC 1
+
 #include <SFML/Graphics.hpp>
 #include <SFML/Network.hpp>
 #include <iostream>
 #include <chrono>
+
 using namespace std;
 
 #ifdef _DEBUG
@@ -152,6 +154,16 @@ void ProcessPacket(char* ptr)
 	case SC_PACKET_LOGIN_OK:
 	{
 		sc_packet_login_ok* packet = reinterpret_cast<sc_packet_login_ok*>(ptr);
+		if (packet->id == -1)
+		{
+			cout << "로그인 실패" << endl;
+			sf::Text text;
+			text.setFont(g_font);
+			text.setString("로그인 실패");
+			while (true);
+			
+			
+		}
 		g_myid = packet->id;
 		avatar.m_x = packet->x;
 		avatar.m_y = packet->y;
@@ -339,6 +351,7 @@ int main()
 	client_initialize();
 	//string name{ "PL" };
 	string name;
+	cout << "id 를 입력하세요 : ";
 	cin >> name;
 	//auto tt = chrono::duration_cast<chrono::milliseconds>
 	//	(chrono::system_clock::now().

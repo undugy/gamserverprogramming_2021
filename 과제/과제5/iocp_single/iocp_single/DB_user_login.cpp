@@ -207,6 +207,17 @@ void send_login_ok_packet(int c_id)
 	clients[c_id].do_send(sizeof(packet), &packet);
 }
 
+void send_login_fail_packet(int c_id)
+{
+	sc_packet_login_ok packet;
+	packet.id = -1;
+	packet.size = sizeof(packet);
+	packet.type = SC_PACKET_LOGIN_OK;
+	packet.x=0;
+	packet.y=0;
+	clients[c_id].do_send(sizeof(packet), &packet);
+}
+
 void send_move_packet(int c_id, int mover)
 {
 	sc_packet_move packet;
@@ -280,12 +291,7 @@ bool search_user_data(int client_id,char* name)
 	
 	size_t convertedChars = 0;
 	mbstowcs_s(&convertedChars, wcstring, newsize, name, _TRUNCATE);
-	/*wcscat_s(exec, 100, wcstring);
-	wcscat_s(exec, 100,L"';");
-	wcout << exec << endl;
-	*/
 	int len = swprintf_s(exec, 100, L"EXEC find_user @Param=N'%ls'", wcstring);
-	//wcout << exec << endl;
 	retcode = SQLAllocHandle(SQL_HANDLE_STMT, hdbc, &hstmt);
 	retcode = SQLExecDirect(hstmt, (SQLWCHAR*)exec, SQL_NTS);
 	if (retcode == SQL_SUCCESS || retcode == SQL_SUCCESS_WITH_INFO) 
@@ -305,6 +311,8 @@ bool search_user_data(int client_id,char* name)
 					strcpy_s(cl.name, name);
 					delete[]wcstring;
 					printf("플레이어 초기화");
+					SQLCancel(hstmt);
+					SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
 					return true;
 				
 			}
@@ -312,6 +320,8 @@ bool search_user_data(int client_id,char* name)
 			{
 				printf("없엉\n");
 				delete[]wcstring;
+				SQLCancel(hstmt);
+				SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
 				return false;
 			}
 		}
@@ -335,7 +345,11 @@ void process_packet(int client_id, unsigned char* p)
 	case CS_PACKET_LOGIN: {
 		cs_packet_login* packet = reinterpret_cast<cs_packet_login*>(p);
 		if (false == search_user_data(client_id, packet->name))
+		{
+			send_login_fail_packet(client_id);
+			Disconnect(client_id);
 			break;
+		}
 		//strcpy_s(cl.name, packet->name);
 		send_login_ok_packet(client_id);
 
@@ -551,6 +565,36 @@ void InitializeDB()
 	}
 }
 
+void save_pos(int client_id)
+{
+	SQLHSTMT hstmt = 0;
+	SQLRETURN retcode;
+
+	CLIENT& cl = clients[client_id];
+	wchar_t exec[100]; //= L"EXEC find_user @Param=N";
+	size_t newsize = strlen(cl.name) + 1;
+	wchar_t* wcstring = new wchar_t[newsize];
+
+	size_t convertedChars = 0;
+	mbstowcs_s(&convertedChars, wcstring, newsize, cl.name, _TRUNCATE);
+	int len = swprintf_s(exec, 100, L"EXEC update_pos @Param=%d,", cl.x);
+	len += swprintf_s(exec + len, 100 - len, L"@Param1=%d,", cl.y);
+	len+= swprintf_s(exec + len, 100 - len, L"@Param2=N'%ls'", wcstring);
+	wcout << exec << endl;
+	retcode = SQLAllocHandle(SQL_HANDLE_STMT, hdbc, &hstmt);
+	retcode = SQLExecDirect(hstmt, (SQLWCHAR*)exec, SQL_NTS);
+	if (retcode == SQL_SUCCESS || retcode == SQL_SUCCESS_WITH_INFO)
+	{
+		printf("저장완료");
+	}
+	else {
+		HandleDiagnosticRecord(hstmt, SQL_HANDLE_STMT, retcode);
+	}
+	if (retcode == SQL_SUCCESS || retcode == SQL_SUCCESS_WITH_INFO) {
+		SQLCancel(hstmt);
+		SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
+	}
+}
 
 void worker()
 {
@@ -567,6 +611,7 @@ void worker()
 			cout << "GQCS Error : ";
 			error_display(err_no);
 			cout << endl;
+			save_pos(client_id);
 			Disconnect(client_id);
 			if (exp_over->_comp_op == OP_SEND)
 				delete exp_over;
@@ -576,6 +621,7 @@ void worker()
 		switch (exp_over->_comp_op) {
 		case OP_RECV: {
 			if (num_byte == 0) {
+				save_pos(client_id);
 				Disconnect(client_id);
 				continue;
 			}
@@ -601,6 +647,7 @@ void worker()
 		}
 		case OP_SEND: {
 			if (num_byte != exp_over->_wsa_buf.len) {
+				save_pos(client_id);
 				Disconnect(client_id);
 			}
 			delete exp_over;
