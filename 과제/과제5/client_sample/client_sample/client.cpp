@@ -157,9 +157,6 @@ void ProcessPacket(char* ptr)
 		if (packet->id == -1)
 		{
 			cout << "로그인 실패" << endl;
-			sf::Text text;
-			text.setFont(g_font);
-			text.setString("로그인 실패");
 			while (true);
 			
 			
