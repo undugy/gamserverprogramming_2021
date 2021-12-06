@@ -16,8 +16,8 @@ public:
 	int		m_prev_size;
 	int		m_last_move_time;
 
-	Player() { cout << "肋给等 积己" << endl; }
-	Player(int c_id) : m_prev_size(0)
+	//Player() { /*cout << "肋给等 积己" << endl;*/ }
+	Player() : m_prev_size(0)
 	{
 		x = 0;
 		y = 0;

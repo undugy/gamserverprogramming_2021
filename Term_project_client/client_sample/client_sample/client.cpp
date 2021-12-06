@@ -1,10 +1,12 @@
 #define SFML_STATIC 1
+
 #include <SFML/Graphics.hpp>
 #include <SFML/Network.hpp>
 #include <iostream>
 #include <chrono>
+
 using namespace std;
-#include"2021_가을_protocol.h"
+
 #ifdef _DEBUG
 #pragma comment (lib, "lib/sfml-graphics-s-d.lib")
 #pragma comment (lib, "lib/sfml-window-s-d.lib")
@@ -20,7 +22,7 @@ using namespace std;
 #pragma comment (lib, "winmm.lib")
 #pragma comment (lib, "ws2_32.lib")
 
-
+#include"2021_가을_protocol.h"
 
 sf::TcpSocket socket;
 
@@ -152,6 +154,13 @@ void ProcessPacket(char* ptr)
 	case SC_PACKET_LOGIN_OK:
 	{
 		sc_packet_login_ok* packet = reinterpret_cast<sc_packet_login_ok*>(ptr);
+		if (packet->id == -1)
+		{
+			cout << "로그인 실패" << endl;
+			while (true);
+			
+			
+		}
 		g_myid = packet->id;
 		avatar.m_x = packet->x;
 		avatar.m_y = packet->y;
@@ -159,8 +168,15 @@ void ProcessPacket(char* ptr)
 		g_y_origin = packet->y - SCREEN_WIDTH / 2;
 		avatar.move(packet->x, packet->y);
 		avatar.show();
+		break;
 	}
-	break;
+	case SC_PACKET_LOGIN_FAIL:
+	{
+		sc_packet_login_fail* packet = reinterpret_cast<sc_packet_login_fail*>(ptr);
+		if (packet->reason == 0)cout << "해당 아이디는 접속중입니다." << endl;
+		else cout << "최대 수용인원수를 초과하였습니다" << endl;
+		g_window->close();
+	}
 	case SC_PACKET_PUT_OBJECT:
 	{
 		sc_packet_put_object* my_packet = reinterpret_cast<sc_packet_put_object*>(ptr);
@@ -326,9 +342,12 @@ void send_login_packet(string &name)
 int main()
 {
 	wcout.imbue(locale("korean"));
+	string name;
+	cout << "id 를 입력하세요 : ";
+	cin >> name;
 	sf::Socket::Status status = socket.connect("127.0.0.1", SERVER_PORT);
 
-
+	
 	socket.setBlocking(false);
 
 	if (status != sf::Socket::Done) {
@@ -337,11 +356,12 @@ int main()
 	}
 
 	client_initialize();
-	string name{ "PL" };
-	auto tt = chrono::duration_cast<chrono::milliseconds>
-		(chrono::system_clock::now().
-			time_since_epoch()).count();
-	name += to_string(tt % 1000);
+	//string name{ "PL" };
+	
+	//auto tt = chrono::duration_cast<chrono::milliseconds>
+	//	(chrono::system_clock::now().
+	//		time_since_epoch()).count();
+	//name += to_string(tt % 1000);
 	send_login_packet(name);	
 	avatar.set_name(name.c_str());
 	sf::RenderWindow window(sf::VideoMode(WINDOW_WIDTH, WINDOW_HEIGHT), "2D CLIENT");

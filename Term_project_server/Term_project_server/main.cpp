@@ -14,7 +14,10 @@ void error_display(int err_no);//에러 확인용
 
 bool is_near(int a, int b);//시야에 있는지 체크
 bool is_npc(int id);//npc인지 체크
-bool is_player(int id);//player 인지 체크
+bool is_player(int id)
+{
+	return (id >= 0) && (id < MAX_USER);
+}//player 인지 체크
 int get_new_id();//새로운 아이디 할당(로그인 아이디 아님)
 
 //--------------------------------------------
@@ -27,12 +30,17 @@ void Disconnect(int c_id);
 void process_packet(int client_id, unsigned char* p);
 void do_timer();
 void Initialize_NPC();
-
+void do_npc_move(int npc_id);
 int main()
 {
+	setlocale(LC_ALL, "korean");
 	wcout.imbue(locale("korean"));
 	WSADATA WSAData;
-	
+	DB::GetInst();
+	for (int i = 0; i < MAX_USER; ++i)
+		clients[i] = new Player;
+	Initialize_NPC();
+	cout << "npc초기화끝" << endl;
 	WSAStartup(MAKEWORD(2, 2), &WSAData);
 	g_s_socket = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, 0, 0, WSA_FLAG_OVERLAPPED);
 	SOCKADDR_IN server_addr;
@@ -56,14 +64,11 @@ int main()
 	AcceptEx(g_s_socket, c_socket, accept_buf, 0, sizeof(SOCKADDR_IN) + 16,
 		sizeof(SOCKADDR_IN) + 16, NULL, &accept_ex._wsa_over);
 	cout << "Accept Called\n";
-	DB::GetInst();
-	for (int i = 0; i < MAX_USER; ++i)
-		clients[i] = new Player(i);
+	
 
 	cout << "Creating Worker Threads\n";
 
-	Initialize_NPC();
-
+	
 	vector <thread> worker_threads;
 	//thread ai_thread{ do_ai };
 	thread timer_thread{ do_timer };
@@ -76,7 +81,10 @@ int main()
 	timer_thread.join();
 	for (auto cl : clients) {
 		if (ST_INGAME == cl->state)
+		{
+			DB::GetInst()->Save_Data(cl->id);
 			Disconnect(cl->id);
+		}
 	}
 	closesocket(g_s_socket);
 	DB::DestroyInst();
@@ -87,7 +95,13 @@ int main()
 
 
 
-
+void Activate_Player_Move_Event(int target, int player_id)
+{
+	EXP_OVER* exp_over = new EXP_OVER;
+	exp_over->_comp_op = OP_PLAYER_MOVE;
+	exp_over->_target = player_id;
+	PostQueuedCompletionStatus(g_h_iocp, 1, target, &exp_over->_wsa_over);
+}
 
 void error_display(int err_no)
 {
@@ -118,7 +132,7 @@ int get_new_id()
 	static int g_id = 0;
 	Player* p=NULL;
 	for (int i = 0; i < MAX_USER; ++i) {
-		p = ((Player*)(clients[i]));
+		p = (Player*)clients[i];
 			p->state_lock.lock();
 		if (ST_FREE == p->state) {
 			p->state = ST_ACCEPT;
@@ -269,13 +283,13 @@ void process_packet(int client_id, unsigned char* p)
 		for (auto other : clients) {
 			if (other->id == client_id)
 				continue;
-			if (ST_INGAME != ((Player*)other)->state)
+			if (ST_INGAME != other->state)
 				continue;
 			if (false == is_near(client_id, other->id))
 				continue;
-			//if (true == is_npc(other._id)) {
-			//	Activate_Player_Move_Event(other._id, cl._id);
-			//}
+			if (true == is_npc(other->id)) {
+				Activate_Player_Move_Event(other->id, cl->id);
+			}
 			nearlist.insert(other->id);
 		}
 
@@ -384,7 +398,7 @@ void worker()
 			cout << "GQCS Error : ";
 			error_display(err_no);
 			cout << endl;
-			//save_pos(client_id);
+			DB::GetInst()->Save_Data(client_id);
 			Disconnect(client_id);
 			if (exp_over->_comp_op == OP_SEND)
 				delete exp_over;
@@ -394,7 +408,7 @@ void worker()
 		switch (exp_over->_comp_op) {
 		case OP_RECV: {
 			if (num_byte == 0) {
-				//save_pos(client_id);
+				DB::GetInst()->Save_Data(client_id);
 				Disconnect(client_id);
 				continue;
 			}
@@ -420,7 +434,7 @@ void worker()
 		}
 		case OP_SEND: {
 			if (num_byte != exp_over->_wsa_buf.len) {
-				//save_pos(client_id);
+				DB::GetInst()->Save_Data(client_id);
 				Disconnect(client_id);
 			}
 			delete exp_over;
@@ -466,10 +480,13 @@ void worker()
 }
 void Initialize_NPC()
 {
+	int x, y;
 	for (int i = NPC_ID_START; i <= NPC_ID_END; ++i) {
-		clients[i] = new NPC(i, 1, rand() % WORLD_WIDTH, rand() % WORLD_HEIGHT);
+		x = rand() % WORLD_WIDTH;
+		y = rand() % WORLD_HEIGHT;
+		clients[i] = new NPC(i, 1,x , y);
 
-		lua_State* L = clients[i]->L = luaL_newstate();
+		lua_State* L=clients[i]->L = luaL_newstate();
 		luaL_openlibs(L);
 		int error = luaL_loadfile(L, "monster.lua") ||
 			lua_pcall(L, 0, 0, 0);
@@ -482,4 +499,56 @@ void Initialize_NPC()
 		lua_register(L, "API_get_x", API_get_x);
 		lua_register(L, "API_get_y", API_get_y);*/
 	}
+}
+void do_npc_move(int npc_id)
+{
+	unordered_set <int> old_viewlist;
+	unordered_set <int> new_viewlist;
+
+	for (auto obj : clients) {
+		if (obj->state != ST_INGAME)
+			continue;
+		if (false == is_player(obj->id))
+			continue;
+		if (true == is_near(npc_id, obj->id))
+			old_viewlist.insert(obj->id);
+	}
+	auto& x = clients[npc_id]->x;
+	auto& y = clients[npc_id]->y;
+	switch (rand() % 4) {
+	case 0: if (y > 0) y--; break;
+	case 1: if (y < (WORLD_HEIGHT - 1)) y++; break;
+	case 2: if (x > 0) x--; break;
+	case 3: if (x < (WORLD_WIDTH - 1)) x++; break;
+	}
+	for (auto obj : clients) {
+		if (obj->state != ST_INGAME)
+			continue;
+		if (false == is_player(obj->id))
+			continue;
+		if (true == is_near(npc_id, obj->id))
+			new_viewlist.insert(obj->id);
+	}
+	// 새로 시야에 들어온 플레이어
+	for (auto pl : new_viewlist) {
+		if (0 == old_viewlist.count(pl)) {
+			((Player*)clients[pl])->m_vl.lock();
+			((Player*)clients[pl])->m_viewlist.insert(npc_id);
+			((Player*)clients[pl])->m_vl.unlock();
+			((Player*)clients[pl])->send_put_object(npc_id);
+		}
+		else {
+			((Player*)clients[pl])->send_move_packet(npc_id);
+		}
+	}
+	// 시야에서 사라지는 경우
+	for (auto pl : old_viewlist) {
+		if (0 == new_viewlist.count(pl)) {
+			((Player*)clients[pl])->m_vl.lock();
+			((Player*)clients[pl])->m_viewlist.erase(npc_id);
+			((Player*)clients[pl])->m_vl.unlock();
+			((Player*)clients[pl])->send_remove_object(npc_id);
+		}
+	}
+
 }

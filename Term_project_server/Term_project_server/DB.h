@@ -40,7 +40,7 @@ private:
 	void InitDB();
 	void HandleDiagnosticRecord(SQLHANDLE hHandle, SQLSMALLINT hType, RETCODE RetCode);
 public:
-	void Save_Data();
+	void Save_Data(int c_id);
 	void get_login_data(int c_id,char*name);
 	
 };

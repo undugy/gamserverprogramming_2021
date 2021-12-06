@@ -54,28 +54,53 @@ void DB::InitDB()
 	}
 }
 
-void DB::Save_Data()
+void DB::Save_Data(int c_id)
 {
+	cl = (Player*)clients[c_id];
+	wchar_t exec[256];
+	wchar_t wname[MAX_NAME_SIZE + 1];
+	size_t len;
+	mbstowcs_s(&len, wname, MAX_NAME_SIZE + 1, cl->name, MAX_NAME_SIZE + 1);
+	wsprintf(exec, L"EXEC save_user_status @Param=N'%ls',@Param1=%d,@Param2=%d,@Param3=%d,@Param4=%d,@Param5=%d,@Param6=%d", 
+		wname,cl->hp,cl->maxhp,cl->exp,cl->level,cl->x,cl->y);
+	wcout << exec << endl;
+	retcode = SQLAllocHandle(SQL_HANDLE_STMT, hdbc, &hstmt);
+	retcode = SQLExecDirect(hstmt, (SQLWCHAR*)exec, SQL_NTS);
+	if (retcode == SQL_SUCCESS || retcode == SQL_SUCCESS_WITH_INFO)
+	{
+		cout << "저장성공\n";
+	}
+	else
+		HandleDiagnosticRecord(hstmt, SQL_HANDLE_STMT, retcode);
+	if (retcode == SQL_SUCCESS || retcode == SQL_SUCCESS_WITH_INFO) {
+		SQLCancel(hstmt);
+		SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
+	}
 }
 
 void DB::get_login_data(int c_id,char*name)
 {
+	//setlocale(LC_ALL, "korean");
 	cl = (Player*)clients[c_id];
-	wchar_t exec[100];
+	wchar_t exec[256];
 	wchar_t wname[MAX_NAME_SIZE+1];
 	size_t len;
 	mbstowcs_s(&len, wname, MAX_NAME_SIZE + 1, name, MAX_NAME_SIZE + 1);
 	wsprintf(exec, L"EXEC select_if_exist @Param=N'%ls'", wname);
 	wcout << exec << endl;
+	retcode = SQLAllocHandle(SQL_HANDLE_STMT, hdbc, &hstmt);
 	retcode = SQLExecDirect(hstmt, (SQLWCHAR*)exec, SQL_NTS);
 	if (retcode == SQL_SUCCESS || retcode == SQL_SUCCESS_WITH_INFO)
 	{
 		retcode = SQLBindCol(hstmt, 1, SQL_C_WCHAR, p_id, MAX_NAME_SIZE + 1, &cb_id);
-		retcode = SQLBindCol(hstmt, 2, SQL_C_SSHORT, &p_x, 100, &cb_x);
-		retcode = SQLBindCol(hstmt, 3, SQL_C_SSHORT, &p_y, 100, &cb_y);
-		retcode = SQLBindCol(hstmt, 2, SQL_C_SSHORT, &p_level, 100, &cb_level);
-		retcode = SQLBindCol(hstmt, 3, SQL_C_SSHORT, &p_hp, 100, &cb_hp);
+		retcode = SQLBindCol(hstmt, 2, SQL_C_SSHORT, &p_hp, 100, &cb_hp);
 		retcode = SQLBindCol(hstmt, 3, SQL_C_SSHORT, &p_maxhp, 100, &cb_maxhp);
+		retcode = SQLBindCol(hstmt, 4, SQL_C_SLONG, &p_exp, 100, &cb_exp);
+		retcode = SQLBindCol(hstmt, 5, SQL_C_SSHORT, &p_level, 100, &cb_level);
+		retcode = SQLBindCol(hstmt, 6, SQL_C_SSHORT, &p_x, 100, &cb_x);
+		retcode = SQLBindCol(hstmt, 7, SQL_C_SSHORT, &p_y, 100, &cb_y);
+		
+		
 		
 		retcode = SQLFetch(hstmt);
 		if (retcode == SQL_ERROR || retcode == SQL_SUCCESS_WITH_INFO)
@@ -96,6 +121,10 @@ void DB::get_login_data(int c_id,char*name)
 	}
 	else {
 		HandleDiagnosticRecord(hstmt, SQL_HANDLE_STMT, retcode);
+	}
+	if (retcode == SQL_SUCCESS || retcode == SQL_SUCCESS_WITH_INFO) {
+		SQLCancel(hstmt);
+		SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
 	}
 }
 
