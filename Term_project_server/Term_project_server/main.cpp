@@ -24,6 +24,7 @@ int get_new_id();//새로운 아이디 할당(로그인 아이디 아님)
 
 void do_timer();
 void worker();
+timer_event SetTimerEvent(int obj_id,int target_id,EVENT_TYPE ev,int seconds);
 //--------------------------------------
 
 void Disconnect(int c_id);
@@ -31,6 +32,15 @@ void process_packet(int client_id, unsigned char* p);
 void do_timer();
 void Initialize_NPC();
 void do_npc_move(int npc_id);
+int API_get_x(lua_State* L);
+int API_get_y(lua_State* L);
+int API_send_attack(lua_State* L);
+
+
+
+
+
+
 int main()
 {
 	setlocale(LC_ALL, "korean");
@@ -192,7 +202,7 @@ void process_packet(int client_id, unsigned char* p)
 			clients[i]->state_lock.unlock();
 
 			if (strcmp(clients[i]->name, packet->name) == 0)
-				((Player*)clients[i])->send_login_fail(0);
+				((Player*)clients[client_id])->send_login_fail(0);
 		}
 		DB::GetInst()->get_login_data(client_id, packet->name);
 		//strcpy_s(cl->name, packet->name);
@@ -202,7 +212,7 @@ void process_packet(int client_id, unsigned char* p)
 		cl->state_lock.lock();
 		cl->state = ST_INGAME;
 		cl->state_lock.unlock();
-		
+		timer_queue.push(SetTimerEvent(client_id, client_id, EVENT_PLAYER_HILL, 5));
 		// 새로 접속한 플레이어의 정보를 주위 플레이어에게 보낸다
 		for (auto other : clients) {
 			if (true == is_npc(other->id)) continue;
@@ -355,31 +365,51 @@ void process_packet(int client_id, unsigned char* p)
 				else near_cl->m_vl.unlock();
 			}
 		}
+		break;
+	}
+	case CS_PACKET_ATTACK: {
+
+
+		//공격검사,따라오는 이벤트 API,움직임 로직(do_npc_move())
+
+		break;
 	}
 	}
 }
+//void start_event()
 void do_timer() {
 
 	while (true) {
 		while (true) {
 			timer_event ev;
-			if (!timer_queue.try_pop(ev))break;
+			if (!timer_queue.try_pop(ev))continue;
 			auto start_t = chrono::system_clock::now();
 			if (ev.start_time <= start_t) {
-				EXP_OVER* ex_over = new EXP_OVER;
-				ex_over->_comp_op = OP_NPC_MOVE;
-				PostQueuedCompletionStatus(g_h_iocp, 1, ev.obj_id, &ex_over->_wsa_over);
+				switch (ev.ev) {
+				case EVENT_NPC_MOVE: {
+
+					EXP_OVER* ex_over = new EXP_OVER;
+					ex_over->_comp_op = OP_NPC_MOVE;
+					PostQueuedCompletionStatus(g_h_iocp, 1, ev.obj_id, &ex_over->_wsa_over);
+					break;
+				}
+
+
+				case EVENT_PLAYER_HILL: {
+					EXP_OVER* ex_over = new EXP_OVER;
+					ex_over->_comp_op = OP_PLAYER_HILL;
+					PostQueuedCompletionStatus(g_h_iocp, 1, ev.obj_id, &ex_over->_wsa_over);
+					break;
+				}
+				}
 			}
-			else {//ev.start_time > start_t
-				//timer_queue.push(ev);	// timer_queue에 넣지 않고 최적화 필요// 1457명
-				this_thread::sleep_for(ev.start_time - start_t);
-				EXP_OVER* ex_over = new EXP_OVER;
-				ex_over->_comp_op = OP_NPC_MOVE;
-				PostQueuedCompletionStatus(g_h_iocp, 1, ev.obj_id, &ex_over->_wsa_over);
-				//break;
+			else {
+				timer_queue.push(ev);
+				break;
 			}
 		}
-		//this_thread::sleep_for(10ms);
+		
+		this_thread::sleep_for(10ms);
 	}
 }
 
@@ -475,6 +505,12 @@ void worker()
 			//do_npc_move(client_id);
 			break;
 		}
+		case OP_PLAYER_HILL: {
+			delete exp_over;
+			((Player*)clients[client_id])->player_hill();
+			timer_queue.push(SetTimerEvent(client_id, client_id, EVENT_PLAYER_HILL, 5));
+			break;
+		}
 		}
 	}
 }
@@ -495,9 +531,9 @@ void Initialize_NPC()
 		lua_pcall(L, 1, 1, 0);
 		lua_pop(L, 1);// eliminate set_uid from stack after call
 
-		/*lua_register(L, "API_SendMessage", API_SendMessage);
+		//lua_register(L, "API_send_attack", API_send_attack);
 		lua_register(L, "API_get_x", API_get_x);
-		lua_register(L, "API_get_y", API_get_y);*/
+		lua_register(L, "API_get_y", API_get_y);
 	}
 }
 void do_npc_move(int npc_id)
@@ -551,4 +587,44 @@ void do_npc_move(int npc_id)
 		}
 	}
 
+}
+
+timer_event SetTimerEvent(int obj_id, int target_id, EVENT_TYPE ev,int seconds)
+{
+	timer_event t;
+	t.obj_id = obj_id;
+	t.target_id = target_id;
+	t.ev = ev;
+	t.start_time=chrono::system_clock::now() + (1s*seconds);
+	return t;
+}
+
+int API_get_x(lua_State* L)
+{
+	int user_id =
+		(int)lua_tointeger(L, -1);
+	lua_pop(L, 2);
+	int x = clients[user_id]->x;
+	lua_pushnumber(L, x);
+	return 1;
+}
+
+int API_get_y(lua_State* L)
+{
+	int user_id =
+		(int)lua_tointeger(L, -1);
+	lua_pop(L, 2);
+	int y = clients[user_id]->y;
+	lua_pushnumber(L, y);
+	return 1;
+}
+
+int API_send_attack(lua_State* L)
+{
+	int npc_id= (int)lua_tointeger(L, -3);
+	int user_id = (int)lua_tointeger(L, -2);
+	lua_pop(L, 2);
+	clients[user_id]->hp -= clients[npc_id]->damage;
+	((Player*)clients[user_id])->send_status_change_packet();
+	
 }

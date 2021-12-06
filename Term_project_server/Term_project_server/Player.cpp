@@ -53,11 +53,11 @@ void Player::send_remove_object(int victim)
 void Player::send_chat_packet(int user_id, char* mess)
 {
 	sc_packet_chat packet;
-	packet.id = id;
+	packet.id = user_id;
 	packet.size = sizeof(packet);
 	packet.type = SC_PACKET_CHAT;
 	strcpy_s(packet.message, mess);
-	((Player*)clients[user_id])->do_send(sizeof(packet), &packet);
+	do_send(sizeof(packet), &packet);
 }
 void Player::send_login_fail(int reason)
 {
@@ -78,6 +78,15 @@ void Player::send_status_change_packet()
 	packet.maxhp = maxhp;
 	packet.size = sizeof(packet);
 	do_send(sizeof(packet), &packet);
+}
+void Player::player_hill()
+{
+	hp += (maxhp / 10);
+	if (hp > maxhp)
+		hp = maxhp;
+	send_status_change_packet();
+
+
 }
 void Player::send_move_packet(int mover)
 {

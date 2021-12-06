@@ -37,5 +37,6 @@ public:
 	void send_chat_packet(int user_id, char* mess);
 	void send_login_fail(int reason);
 	void send_status_change_packet();
+	void player_hill();
 };
 

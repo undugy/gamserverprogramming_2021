@@ -27,8 +27,8 @@ using namespace std;
 sf::TcpSocket socket;
 
 constexpr auto BUF_SIZE = 256;
-constexpr auto SCREEN_WIDTH = 16;
-constexpr auto SCREEN_HEIGHT = 16;
+constexpr auto SCREEN_WIDTH = 20;
+constexpr auto SCREEN_HEIGHT = 20;
 
 constexpr auto TILE_WIDTH = 65;
 constexpr auto WINDOW_WIDTH = TILE_WIDTH * SCREEN_WIDTH + 10;   // size of window
@@ -318,7 +318,14 @@ bool client_main()
 	g_window->draw(text);
 	return true;
 }
-
+void send_attack_packet()
+{
+	cs_packet_attack packet;
+	packet.size = sizeof(packet);
+	packet.type = CS_PACKET_ATTACK;
+	size_t sent=0;
+	socket.send(&packet, sizeof(packet), sent);
+}
 void send_move_packet(char dr)
 {
 	cs_packet_move packet;
@@ -375,25 +382,27 @@ int main()
 			if (event.type == sf::Event::Closed)
 				window.close();
 			if (event.type == sf::Event::KeyPressed) {
-				int direction = -1;
 				switch (event.key.code) {
 				case sf::Keyboard::Left:
-					direction = 2;
+					send_move_packet(2);
 					break;
 				case sf::Keyboard::Right:
-					direction = 3;
+					send_move_packet(3);
 					break;
 				case sf::Keyboard::Up:
-					direction = 0;
+					send_move_packet(0);
 					break;
 				case sf::Keyboard::Down:
-					direction = 1;
+					send_move_packet(1);
+					break;
+				case sf::Keyboard::A:
+					send_attack_packet();
 					break;
 				case sf::Keyboard::Escape:
 					window.close();
 					break;
 				}
-				if (-1 != direction) send_move_packet(direction);
+				
 			}
 		}
 
