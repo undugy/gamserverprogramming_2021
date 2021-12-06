@@ -1,5 +1,6 @@
 #include "DB.h"
-
+extern array<NPC*, MAX_USER + MAX_NPC>clients;
+DB* DB::m_pInst = NULL;
 DB::DB():hstmt(0)
 {
 	InitDB();
@@ -17,7 +18,7 @@ DB::~DB()
 void DB::InitDB()
 {
 
-
+	
 	//SQLINTEGER p_id;
 	//SQLSMALLINT p_level;
 	//SQLWCHAR p_Name[NAME_LEN];
@@ -57,8 +58,45 @@ void DB::Save_Data()
 {
 }
 
-void DB::get_login_data()
+void DB::get_login_data(int c_id,char*name)
 {
+	cl = (Player*)clients[c_id];
+	wchar_t exec[100];
+	wchar_t wname[MAX_NAME_SIZE+1];
+	size_t len;
+	mbstowcs_s(&len, wname, MAX_NAME_SIZE + 1, name, MAX_NAME_SIZE + 1);
+	wsprintf(exec, L"EXEC select_if_exist @Param=N'%ls'", wname);
+	wcout << exec << endl;
+	retcode = SQLExecDirect(hstmt, (SQLWCHAR*)exec, SQL_NTS);
+	if (retcode == SQL_SUCCESS || retcode == SQL_SUCCESS_WITH_INFO)
+	{
+		retcode = SQLBindCol(hstmt, 1, SQL_C_WCHAR, p_id, MAX_NAME_SIZE + 1, &cb_id);
+		retcode = SQLBindCol(hstmt, 2, SQL_C_SSHORT, &p_x, 100, &cb_x);
+		retcode = SQLBindCol(hstmt, 3, SQL_C_SSHORT, &p_y, 100, &cb_y);
+		retcode = SQLBindCol(hstmt, 2, SQL_C_SSHORT, &p_level, 100, &cb_level);
+		retcode = SQLBindCol(hstmt, 3, SQL_C_SSHORT, &p_hp, 100, &cb_hp);
+		retcode = SQLBindCol(hstmt, 3, SQL_C_SSHORT, &p_maxhp, 100, &cb_maxhp);
+		
+		retcode = SQLFetch(hstmt);
+		if (retcode == SQL_ERROR || retcode == SQL_SUCCESS_WITH_INFO)
+				HandleDiagnosticRecord(hstmt, SQL_HANDLE_STMT, retcode);
+		if (retcode == SQL_SUCCESS || retcode == SQL_SUCCESS_WITH_INFO)
+		{
+				cl->x = p_x;
+				cl->y = p_y;
+				cl->level = p_level;
+				cl->hp = p_hp;
+				cl->maxhp=p_maxhp;
+				strcpy_s(cl->name, name);
+				printf("플레이어 초기화");
+				
+
+		}
+		
+	}
+	else {
+		HandleDiagnosticRecord(hstmt, SQL_HANDLE_STMT, retcode);
+	}
 }
 
 void DB::HandleDiagnosticRecord(SQLHANDLE hHandle, SQLSMALLINT hType, RETCODE RetCode)

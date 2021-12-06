@@ -12,6 +12,7 @@ public:
 	short	hp, maxhp;
 	short x, y;
 	STATE state;
+	mutex state_lock;
 	lua_State* L;
 	NPC() = default;
 	NPC(int id):is_active(false),id(id),exp(0) ,state(ST_FREE) //player¿ë

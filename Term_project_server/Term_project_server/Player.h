@@ -8,7 +8,7 @@ public:
     unordered_set<int>m_viewlist;
     mutex m_vl;
 
-    mutex state_lock;
+    
     
 
     EXP_OVER m_recv_over;

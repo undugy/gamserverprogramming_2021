@@ -1,6 +1,7 @@
 
 #include"header.h"
 #include"Player.h"
+#include"DB.h"
 HANDLE g_h_iocp;
 SOCKET g_s_socket;
 SQLHENV henv;
@@ -18,9 +19,6 @@ int get_new_id();//새로운 아이디 할당(로그인 아이디 아님)
 
 //--------------------------------------------
 
-//---------패킷전송---------------------
-
-
 void do_timer();
 void worker();
 //--------------------------------------
@@ -29,10 +27,12 @@ void Disconnect(int c_id);
 void process_packet(int client_id, unsigned char* p);
 void do_timer();
 void Initialize_NPC();
+
 int main()
 {
 	wcout.imbue(locale("korean"));
 	WSADATA WSAData;
+	
 	WSAStartup(MAKEWORD(2, 2), &WSAData);
 	g_s_socket = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, 0, 0, WSA_FLAG_OVERLAPPED);
 	SOCKADDR_IN server_addr;
@@ -56,7 +56,7 @@ int main()
 	AcceptEx(g_s_socket, c_socket, accept_buf, 0, sizeof(SOCKADDR_IN) + 16,
 		sizeof(SOCKADDR_IN) + 16, NULL, &accept_ex._wsa_over);
 	cout << "Accept Called\n";
-
+	DB::GetInst();
 	for (int i = 0; i < MAX_USER; ++i)
 		clients[i] = new Player(i);
 
@@ -79,6 +79,7 @@ int main()
 			Disconnect(cl->id);
 	}
 	closesocket(g_s_socket);
+	DB::DestroyInst();
 	WSACleanup();
 	return 0;
 }
@@ -165,9 +166,22 @@ void process_packet(int client_id, unsigned char* p)
 	switch (packet_type) {
 	case CS_PACKET_LOGIN: {
 		cs_packet_login* packet = reinterpret_cast<cs_packet_login*>(p);
-		
-		for(int i=0; i< MAX_USER; ++i)
-		strcpy_s(cl->name, packet->name);
+		//패킷의 name을 가지고 있는 플레이어가 있는지 체크
+		for (int i = 0; i < MAX_USER; ++i)
+		{	
+			clients[i]->state_lock.lock();
+			if (ST_INGAME != clients[i]->state){
+				clients[i]->state_lock.unlock();
+				continue;
+
+			}
+			clients[i]->state_lock.unlock();
+
+			if (strcmp(clients[i]->name, packet->name) == 0)
+				((Player*)clients[i])->send_login_fail(0);
+		}
+		DB::GetInst()->get_login_data(client_id, packet->name);
+		//strcpy_s(cl->name, packet->name);
 		cl->send_login_ok_packet();
 		Player* other_cl = NULL;
 		
