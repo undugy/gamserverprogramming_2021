@@ -70,7 +70,7 @@ void Player::send_login_fail(int reason)
 void Player::send_status_change_packet()
 {
 	sc_packet_status_change packet;
-	
+	packet.id = id;
 	packet.type = SC_PACKET_STATUS_CHANGE;
 	packet.level =level;
 	packet.exp = exp;
@@ -88,6 +88,7 @@ void Player::player_hill()
 
 
 }
+
 void Player::send_move_packet(int mover)
 {
 	sc_packet_move packet;

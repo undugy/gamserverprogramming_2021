@@ -38,5 +38,6 @@ public:
 	void send_login_fail(int reason);
 	void send_status_change_packet();
 	void player_hill();
+	void is_hpfull();
 };
 

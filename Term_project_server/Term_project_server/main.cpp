@@ -34,8 +34,8 @@ void Initialize_NPC();
 void do_npc_move(int npc_id);
 int API_get_x(lua_State* L);
 int API_get_y(lua_State* L);
-int API_send_attack(lua_State* L);
-
+int API_recognize_player(lua_State* L);
+void attack(int client_id, int target_id);
 
 
 
@@ -205,8 +205,10 @@ void process_packet(int client_id, unsigned char* p)
 				((Player*)clients[client_id])->send_login_fail(0);
 		}
 		DB::GetInst()->get_login_data(client_id, packet->name);
+		
 		//strcpy_s(cl->name, packet->name);
 		cl->send_login_ok_packet();
+		cl->send_status_change_packet();
 		Player* other_cl = NULL;
 		
 		cl->state_lock.lock();
@@ -259,7 +261,10 @@ void process_packet(int client_id, unsigned char* p)
 			cl->m_vl.lock();
 			cl->m_viewlist.insert(other_cl->id);
 			cl->m_vl.unlock();
+			if (true == is_npc(other_cl->id)){
 
+				timer_queue.push(SetTimerEvent(other_cl->id, other_cl->id, EVENT_NPC_MOVE, 1));
+			}
 			sc_packet_put_object packet;
 			packet.id = other_cl->id;
 			strcpy_s(packet.name, other_cl->name);
@@ -317,7 +322,10 @@ void process_packet(int client_id, unsigned char* p)
 				cl->m_vl.unlock();
 				cl->send_put_object(other);
 
-				if (true == is_npc(other)) continue;
+				if (true == is_npc(other)) {
+					timer_queue.push(SetTimerEvent(other, other, EVENT_NPC_MOVE, 1));
+					continue;
+				}
 				near_cl = (Player*)clients[other];
 				near_cl->m_vl.lock();
 				if (0 == near_cl->m_viewlist.count(cl->id)) {
@@ -365,13 +373,19 @@ void process_packet(int client_id, unsigned char* p)
 				else near_cl->m_vl.unlock();
 			}
 		}
+		for (auto npc : my_vl)
+		{
+			if (false == is_npc(npc))continue;
+			EXP_OVER* exp_over = new EXP_OVER;
+			exp_over->_comp_op = OP_TRACKING_PLAYER;
+			exp_over->_target = client_id;
+			PostQueuedCompletionStatus(g_h_iocp, 1, npc, &exp_over->_wsa_over);
+		}
 		break;
 	}
 	case CS_PACKET_ATTACK: {
-
-
 		//공격검사,따라오는 이벤트 API,움직임 로직(do_npc_move())
-
+		
 		break;
 	}
 	}
@@ -396,8 +410,16 @@ void do_timer() {
 
 
 				case EVENT_PLAYER_HILL: {
+					
 					EXP_OVER* ex_over = new EXP_OVER;
 					ex_over->_comp_op = OP_PLAYER_HILL;
+					PostQueuedCompletionStatus(g_h_iocp, 1, ev.obj_id, &ex_over->_wsa_over);
+					break;
+				}
+				case EVENT_NPC_ATTACK: {
+					EXP_OVER* ex_over = new EXP_OVER;
+					ex_over->_comp_op = OP_NPC_ATTACK;
+					ex_over->_target = ev.target_id;
 					PostQueuedCompletionStatus(g_h_iocp, 1, ev.obj_id, &ex_over->_wsa_over);
 					break;
 				}
@@ -502,13 +524,44 @@ void worker()
 					  break;
 		case OP_NPC_MOVE: {
 			delete exp_over;
-			//do_npc_move(client_id);
+			do_npc_move(client_id);
 			break;
 		}
 		case OP_PLAYER_HILL: {
 			delete exp_over;
+			clients[client_id]->state_lock.lock();
+			if (clients[client_id]->state != ST_INGAME) {
+				clients[client_id]->state_lock.unlock();
+				break;
+			}
+			clients[client_id]->state_lock.unlock();
+			
 			((Player*)clients[client_id])->player_hill();
 			timer_queue.push(SetTimerEvent(client_id, client_id, EVENT_PLAYER_HILL, 5));
+			break;
+		}
+		case OP_TRACKING_PLAYER: {
+			lua_State* L = clients[client_id]->L;
+			clients[client_id]->lua_lock.lock();
+			lua_getglobal(L, "event_agro_fallow");
+			lua_pushnumber(L, reinterpret_cast<Player*>(clients[client_id])->target_id);
+			lua_pcall(L, 1, 0, 0);
+			clients[client_id]->lua_lock.unlock();
+			//cout << "tracking들어오기는함\n";
+			
+			delete exp_over;
+			break;
+		
+		}
+		case OP_NPC_ATTACK: {
+			if (exp_over->_target < MAX_USER)
+			{
+				attack(client_id, exp_over->_target);
+				if (true == clients[client_id]->is_recognize)
+					timer_queue.push(SetTimerEvent(client_id, exp_over->_target,
+						EVENT_NPC_ATTACK, 1));
+			}
+			delete exp_over;
 			break;
 		}
 		}
@@ -520,18 +573,24 @@ void Initialize_NPC()
 	for (int i = NPC_ID_START; i <= NPC_ID_END; ++i) {
 		x = rand() % WORLD_WIDTH;
 		y = rand() % WORLD_HEIGHT;
-		clients[i] = new NPC(i, 1,x , y);
+		clients[i] = new NPC(i, 1,x , y,1,50,30);
 
 		lua_State* L=clients[i]->L = luaL_newstate();
 		luaL_openlibs(L);
 		int error = luaL_loadfile(L, "monster.lua") ||
 			lua_pcall(L, 0, 0, 0);
-		lua_getglobal(L, "set_uid");
-		lua_pushnumber(L, i);
-		lua_pcall(L, 1, 1, 0);
-		lua_pop(L, 1);// eliminate set_uid from stack after call
-
-		//lua_register(L, "API_send_attack", API_send_attack);
+		lua_getglobal(L, "initializMonster");
+		lua_pushnumber(L, clients[i]->id);
+		lua_pushnumber(L, clients[i]->x);
+		lua_pushnumber(L, clients[i]->y);					  
+		lua_pushnumber(L, clients[i]->level);	  
+		lua_pushnumber(L, clients[i]->maxhp);					  
+		lua_pushnumber(L, clients[i]->exp);					 
+		lua_pushnumber(L, clients[i]->damage);
+		lua_pushnumber(L, clients[i]->type);
+		lua_pcall(L, 8, 0, 0);
+		//lua_pop(L, 8);
+		lua_register(L, "API_recognize_player", API_recognize_player);
 		lua_register(L, "API_get_x", API_get_x);
 		lua_register(L, "API_get_y", API_get_y);
 	}
@@ -551,19 +610,35 @@ void do_npc_move(int npc_id)
 	}
 	auto& x = clients[npc_id]->x;
 	auto& y = clients[npc_id]->y;
-	switch (rand() % 4) {
-	case 0: if (y > 0) y--; break;
-	case 1: if (y < (WORLD_HEIGHT - 1)) y++; break;
-	case 2: if (x > 0) x--; break;
-	case 3: if (x < (WORLD_WIDTH - 1)) x++; break;
+	if (false == clients[npc_id]->is_recognize) {
+		switch (rand() % 4) {
+		case 0: if (y > 0) y--; break;
+		case 1: if (y < (WORLD_HEIGHT - 1)) y++; break;
+		case 2: if (x > 0) x--; break;
+		case 3: if (x < (WORLD_WIDTH - 1)) x++; break;
+		}
+	}
+	else
+	{
+		if (clients[clients[npc_id]->target_id]->x - x != 0)
+		{
+			x+= (clients[clients[npc_id]->target_id]->x - x) / abs(clients[clients[npc_id]->target_id]->x - x);
+		}
+		else if (clients[clients[npc_id]->target_id]->y - y != 0)
+		{
+			y += (clients[clients[npc_id]->target_id]->y - y) / abs(clients[clients[npc_id]->target_id]->y - y);
+		}
 	}
 	for (auto obj : clients) {
 		if (obj->state != ST_INGAME)
 			continue;
 		if (false == is_player(obj->id))
-			continue;
+			break;
 		if (true == is_near(npc_id, obj->id))
+		{
 			new_viewlist.insert(obj->id);
+			timer_queue.push(SetTimerEvent(npc_id, npc_id, EVENT_NPC_MOVE, 1));
+		}
 	}
 	// 새로 시야에 들어온 플레이어
 	for (auto pl : new_viewlist) {
@@ -619,12 +694,148 @@ int API_get_y(lua_State* L)
 	return 1;
 }
 
-int API_send_attack(lua_State* L)
+int API_recognize_player(lua_State* L)
 {
-	int npc_id= (int)lua_tointeger(L, -3);
-	int user_id = (int)lua_tointeger(L, -2);
-	lua_pop(L, 2);
-	clients[user_id]->hp -= clients[npc_id]->damage;
-	((Player*)clients[user_id])->send_status_change_packet();
+	int npc_id= (int)lua_tointeger(L, -2);
+	int user_id = (int)lua_tointeger(L, -1);
 	
+	lua_pop(L, 3);
+	if (clients[npc_id]->is_recognize == true)return 1;
+	
+	
+	clients[npc_id]->is_recognize = true;
+	clients[npc_id]->target_id = user_id;
+	
+	timer_queue.push(SetTimerEvent(npc_id, user_id, EVENT_NPC_ATTACK, 1));
+	return 1;
+	
+}
+
+void attack(int client_id, int target_id)
+{
+	//if (false==clients[client_id]->is_active)
+	//	return;
+
+	if (clients[client_id]->x == clients[target_id]->x && abs(clients[client_id]->y - clients[target_id]->y) <= 1 ||
+		clients[client_id]->y == clients[target_id]->y && abs(clients[client_id]->x - clients[target_id]->x) <= 1)
+	{
+		clients[target_id]->hp -= clients[client_id]->damage;
+		cout << client_id << "가 " << target_id << "를 공격-> " << clients[target_id]->damage << "의 데미지를 입힘" << endl;
+		Player* target = (Player*)clients[target_id];
+		target->send_status_change_packet();
+		if (clients[target_id]->hp <= 0 && target_id < MAX_USER)
+		{
+			
+			cout << target->name << "이(가)" << client_id << "에 의해 죽었습니다" << endl;
+			target->m_vl.lock();
+			auto& old_viewlist = target->m_viewlist;
+			target->m_vl.unlock();
+
+			target->hp = target->maxhp;
+			target->exp = target->exp / 2;
+			target->x = 10;
+			target->y = 10;
+			//다른곳에서 is_recognize초기화
+			unordered_set<int>new_viewlist;
+			for (int i = 0; i < MAX_USER; ++i)
+			{
+				if (target_id == i)continue;
+				clients[i]->state_lock.lock();
+				if (clients[i]->state != ST_INGAME)
+				{
+					clients[i]->state_lock.unlock();
+					continue;
+				}
+				clients[i]->state_lock.unlock();
+				if (false == is_near(i, target_id))continue;
+				new_viewlist.insert(i);
+			}
+			for (int i = NPC_ID_START; i <=NPC_ID_END; ++i)
+			{
+				if (false == is_near(i, target_id)) continue;
+				new_viewlist.insert(i);
+			}
+			target->send_move_packet(target->id);
+			Player* other = NULL;
+			for (auto pl : old_viewlist)
+			{
+				if (0 == new_viewlist.count(pl))continue;
+				if (true == is_npc(pl))continue;
+				other = (Player*)clients[pl];
+				other->m_vl.lock();
+				if (0 < other->m_viewlist.count(target_id))
+				{
+					other->m_vl.unlock();
+					other->send_move_packet(target_id);
+				}
+				else
+				{
+					other->m_viewlist.insert(target_id);
+					other->m_vl.unlock();
+					other->send_put_object(target_id);
+				}
+
+				for (auto& pl : new_viewlist)
+				{
+					if (0 < old_viewlist.count(pl))continue;
+					target->m_vl.lock();
+					target->m_viewlist.insert(pl);
+					target->m_vl.unlock();
+					target->send_put_object(pl);
+					other = (Player*)clients[pl];
+					other->m_vl.lock();
+					if (0 == other->m_viewlist.count(target_id))
+					{
+						other->m_viewlist.insert(target_id);
+						other->m_vl.unlock();
+						other->send_put_object(target_id);
+					}
+					else
+					{
+						other->m_vl.unlock();
+						other->send_move_packet(target_id);
+					}
+					
+				}
+
+				for (auto pl : old_viewlist)
+				{
+					if( 0< new_viewlist.count(pl))continue;
+					target->m_vl.lock();
+					target->m_viewlist.erase(pl);
+					target->m_vl.unlock();
+					target->send_remove_object(pl);
+					if (true == is_npc(pl))continue;
+					other = (Player*)clients[pl];
+					other->m_vl.lock();
+					if (0 == other->m_viewlist.count(pl))
+					{
+						other->m_viewlist.erase(target_id);
+						other->m_vl.unlock();
+						other->send_remove_object(target_id);
+					}
+					else
+						other->m_vl.unlock();
+
+				}
+
+				for (auto npc : new_viewlist)
+				{
+					if (false == is_npc(npc))continue;
+
+					lua_State* L = clients[npc]->L;
+					clients[npc]->lua_lock.lock();
+					lua_getglobal(L, "event_agro_fallow");
+					lua_pushnumber(L, target_id);
+					lua_pcall(L, 1, 0, 0);
+					clients[npc]->lua_lock.unlock();
+					
+				}
+			}
+		
+		}
+		
+		
+		//이벤트 호출
+	}
 }

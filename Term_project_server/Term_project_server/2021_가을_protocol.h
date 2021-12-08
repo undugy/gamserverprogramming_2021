@@ -7,7 +7,8 @@ const int  WORLD_WIDTH = 2000;
 const int  MAX_NAME_SIZE = 20;
 const int  MAX_CHAT_SIZE = 100;
 const int  MAX_USER = 10000;
-const int  MAX_NPC = 200000;
+//const int  MAX_NPC = 200000;
+const int  MAX_NPC = 2000;
 constexpr int NPC_ID_START = MAX_USER;
 constexpr int NPC_ID_END = MAX_USER + MAX_NPC - 1;
 
@@ -107,6 +108,7 @@ struct sc_packet_login_fail {
 struct sc_packet_status_change {
 	unsigned char size;
 	char type;
+	int id;
 	short	level;
 	short	hp, maxhp;
 	int		exp;

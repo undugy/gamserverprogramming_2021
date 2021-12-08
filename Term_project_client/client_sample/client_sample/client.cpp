@@ -22,13 +22,13 @@ using namespace std;
 #pragma comment (lib, "winmm.lib")
 #pragma comment (lib, "ws2_32.lib")
 
-#include"2021_가을_protocol.h"
+#include"/Users/undug/Documents/GitHub/gamserverprogramming_2021/Term_project_server/Term_project_server/2021_가을_protocol.h"
 
 sf::TcpSocket socket;
 
 constexpr auto BUF_SIZE = 256;
-constexpr auto SCREEN_WIDTH = 20;
-constexpr auto SCREEN_HEIGHT = 20;
+constexpr auto SCREEN_WIDTH = 15;
+constexpr auto SCREEN_HEIGHT = 15;
 
 constexpr auto TILE_WIDTH = 65;
 constexpr auto WINDOW_WIDTH = TILE_WIDTH * SCREEN_WIDTH + 10;   // size of window
@@ -50,8 +50,12 @@ private:
 	sf::Text m_chat;
 	chrono::system_clock::time_point m_mess_end_time;
 public:
+	int id;
 	int m_x, m_y;
-
+	short  m_hp, m_maxhp;
+	short  m_level;
+	int	   m_exp;
+	char    m_type;
 	OBJECT(sf::Texture& t, int x, int y, int x2, int y2) {
 		m_showing = false;
 		m_sprite.setTexture(t);
@@ -110,6 +114,13 @@ public:
 		m_chat.setFillColor(sf::Color(255, 255, 255));
 		m_chat.setStyle(sf::Text::Bold);
 		m_mess_end_time = chrono::system_clock::now() + chrono::seconds(3);
+	}
+	void set_status(short level, short hp,short maxhp,int exp){
+		m_hp = hp;
+		m_maxhp=maxhp;
+		m_level=level;
+		m_exp= exp;
+		
 	}
 };
 
@@ -243,6 +254,23 @@ void ProcessPacket(char* ptr)
 		}
 		break;
 	}
+	case SC_PACKET_STATUS_CHANGE:
+	{
+		sc_packet_status_change* packet = reinterpret_cast<sc_packet_status_change*>(ptr);
+		int other_id = packet->id;
+		if (g_myid == packet->id) {
+			avatar.set_status(packet->level, packet->hp, packet->maxhp, packet->exp);
+		}
+		else if(other_id<MAX_USER)
+		{
+			players[other_id].set_status(packet->level, packet->hp, packet->maxhp, packet->exp);
+		}
+		else
+		{
+			players[other_id].set_status(packet->level, packet->hp, packet->maxhp, packet->exp);
+		}
+		break;
+	}
 	default:
 		printf("Unknown PACKET type [%d]\n", ptr[1]);
 	}
@@ -277,7 +305,8 @@ bool client_main()
 {
 	char net_buf[BUF_SIZE];
 	size_t	received;
-
+	float hp_progress;
+	
 	auto recv_result = socket.receive(net_buf, BUF_SIZE, received);
 	if (recv_result == sf::Socket::Error)
 	{
@@ -315,6 +344,15 @@ bool client_main()
 	char buf[100];
 	sprintf_s(buf, "(%d, %d)", avatar.m_x, avatar.m_y);
 	text.setString(buf);
+	hp_progress = 300 * ((float)avatar.m_hp / (float)avatar.m_maxhp);
+	sf::RectangleShape hpbar(sf::Vector2f(hp_progress, 30));
+	sf::RectangleShape maxhp_bar(sf::Vector2f(300, 30));
+	hpbar.setFillColor(sf::Color(255, 0, 0, 200));
+	maxhp_bar.setFillColor(sf::Color(5, 5, 5, 230));
+	hpbar.setPosition(10.0f, 30);
+	maxhp_bar.setPosition(10.0f, 30);
+	g_window->draw(maxhp_bar);
+	g_window->draw(hpbar);
 	g_window->draw(text);
 	return true;
 }
