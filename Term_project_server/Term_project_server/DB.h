@@ -28,12 +28,14 @@ public:
 private:
 	 SQLHENV henv;
 	 SQLHDBC hdbc;
-	 SQLHSTMT hstmt = 0;
+	 
 	 SQLWCHAR p_id[MAX_NAME_SIZE + 1];
 	 SQLSMALLINT p_x, p_y, p_level, p_hp, p_maxhp;
 	 SQLINTEGER  p_exp;
 	 SQLLEN cb_x, cb_y, cb_id, cb_level, cb_hp, cb_maxhp, cb_exp;
 	 Player* cl = NULL;
+public:
+	 mutex db_l;
 	 
 private:
 	SQLRETURN retcode;

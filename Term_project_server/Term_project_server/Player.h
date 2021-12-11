@@ -21,6 +21,7 @@ public:
 	{
 		x = 0;
 		y = 0;
+		m_last_move_time = 0;
 	}
 
 	~Player()
@@ -31,10 +32,11 @@ public:
 	void do_recv();
 	void do_send(int num_bytes,void*mess);
 	void send_login_ok_packet();
-	void send_move_packet( int mover);//이거 정의 안해놔서 오류뜸
+	void send_move_packet( int mover);
+	void send_move_packet(int x,int y,int mover);
 	void send_remove_object(int victim);
 	void send_put_object(int target);
-	void send_chat_packet(int user_id, char* mess);
+	void send_chat_packet( char* mess);
 	void send_login_fail(int reason);
 	void send_status_change_packet();
 	void player_hill();

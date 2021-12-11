@@ -19,7 +19,7 @@ using namespace chrono;
 
 extern HWND		hWnd;
 
-const static int MAX_TEST = 2000;
+const static int MAX_TEST = 20000;
 const static int MAX_CLIENTS = MAX_TEST * 2;
 const static int INVALID_ID = -1;
 const static int MAX_PACKET_SIZE = 255;
@@ -27,7 +27,8 @@ const static int MAX_BUFF_SIZE = 255;
 
 #pragma comment (lib, "ws2_32.lib")
 
-#include "..\..\iocp_single\iocp_single\protocol.h"
+#include"/Users/undug/Documents/GitHub/gamserverprogramming_2021/Term_project_server/Term_project_server/2021_°¡À»_protocol.h"
+
 
 HANDLE g_hiocp;
 
@@ -47,6 +48,7 @@ struct CLIENT {
 	int id;
 	int x;
 	int y;
+	char name[MAX_NAME_SIZE];
 	atomic_bool connected;
 
 	SOCKET client_socket;
@@ -149,6 +151,11 @@ void ProcessPacket(int ci, unsigned char packet[])
 	case SC_PACKET_PUT_OBJECT: break;
 	case SC_PACKET_REMOVE_OBJECT: break;
 	case SC_PACKET_CHAT: break;
+	case SC_PACKET_STATUS_CHANGE:break;
+	case SC_PACKET_LOGIN_FAIL: {
+		DisconnectClient(ci);
+		break;
+	}
 	case SC_PACKET_LOGIN_OK:
 	{
 		g_clients[ci].connected = true;
@@ -160,10 +167,10 @@ void ProcessPacket(int ci, unsigned char packet[])
 		g_clients[my_id].x = login_packet->x;
 		g_clients[my_id].y = login_packet->y;
 
-		//cs_packet_teleport t_packet;
-		//t_packet.size = sizeof(t_packet);
-		//t_packet.type = CS_TELEPORT;
-		//SendPacket(my_id, &t_packet);
+		cs_packet_teleport t_packet;
+		t_packet.size = sizeof(t_packet);
+		t_packet.type = CS_PACKET_TELEPORT;
+		SendPacket(my_id, &t_packet);
 	}
 	break;
 	default: MessageBox(hWnd, L"Unknown Packet Type", L"ERROR", 0);
@@ -264,6 +271,7 @@ void Adjust_Number_Of_Client()
 	if (active_clients >= MAX_TEST) return;
 	if (num_connections >= MAX_CLIENTS) return;
 
+
 	auto duration = high_resolution_clock::now() - last_connect_time;
 	if (ACCEPT_DELY * delay_multiplier > duration_cast<milliseconds>(duration).count()) return;
 
@@ -296,13 +304,13 @@ void Adjust_Number_Of_Client()
 	ServerAddr.sin_family = AF_INET;
 	ServerAddr.sin_port = htons(SERVER_PORT);
 	ServerAddr.sin_addr.s_addr = inet_addr("127.0.0.1");
-
+	
 
 	int Result = WSAConnect(g_clients[num_connections].client_socket, (sockaddr*)&ServerAddr, sizeof(ServerAddr), NULL, NULL, NULL, NULL);
 	if (0 != Result) {
 		error_display("WSAConnect : ", GetLastError());
 	}
-
+	
 	g_clients[num_connections].curr_packet_size = 0;
 	g_clients[num_connections].prev_packet_data = 0;
 	ZeroMemory(&g_clients[num_connections].recv_over, sizeof(g_clients[num_connections].recv_over));
@@ -317,7 +325,7 @@ void Adjust_Number_Of_Client()
 	cs_packet_login l_packet;
 
 	int temp = num_connections;
-	sprintf_s(l_packet.name, "%d", temp);
+	sprintf_s(l_packet.name, "test%d", temp);
 	l_packet.size = sizeof(l_packet);
 	l_packet.type = CS_PACKET_LOGIN;
 	SendPacket(num_connections, &l_packet);

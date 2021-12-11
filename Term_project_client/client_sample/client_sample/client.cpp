@@ -4,7 +4,7 @@
 #include <SFML/Network.hpp>
 #include <iostream>
 #include <chrono>
-
+#include<vector>
 using namespace std;
 
 #ifdef _DEBUG
@@ -23,12 +23,14 @@ using namespace std;
 #pragma comment (lib, "ws2_32.lib")
 
 #include"/Users/undug/Documents/GitHub/gamserverprogramming_2021/Term_project_server/Term_project_server/2021_가을_protocol.h"
+//#include "../Term_project_server/Term_project_server\2021_가을_protocol.h"
 
 sf::TcpSocket socket;
 
 constexpr auto BUF_SIZE = 256;
-constexpr auto SCREEN_WIDTH = 15;
-constexpr auto SCREEN_HEIGHT = 15;
+constexpr auto SCREEN_WIDTH = 20;
+constexpr auto SCREEN_HEIGHT = 20;
+
 
 constexpr auto TILE_WIDTH = 65;
 constexpr auto WINDOW_WIDTH = TILE_WIDTH * SCREEN_WIDTH + 10;   // size of window
@@ -38,9 +40,70 @@ constexpr auto WINDOW_HEIGHT = TILE_WIDTH * SCREEN_WIDTH + 10;
 int g_myid;
 int g_x_origin;
 int g_y_origin;
-
+vector<string>m_text_log;
 sf::RenderWindow* g_window;
 sf::Font g_font;
+class TextField : public sf::Transformable {
+private:
+	unsigned int m_size;
+	sf::Font m_font;
+	std::wstring m_text;
+	sf::RectangleShape log_rect;
+	bool m_hasfocus;
+public:
+	TextField(unsigned int maxChars) : m_size(maxChars),
+		
+		m_hasfocus(false),
+		log_rect(sf::Vector2f(400, 200))
+	{
+		m_font.loadFromFile("C:/Windows/Fonts/Arial.ttf"); // I'm working on Windows, you can put your own font instead
+		
+
+		log_rect.setFillColor(sf::Color(0, 0, 0, 100));
+		log_rect.setPosition(this->getPosition().x, this->getPosition().y - 180);
+
+	}
+
+	void setPosition(float x, float y) {
+		sf::Transformable::setPosition(x, y);
+		//m_rect.setPosition(x, y);
+		log_rect.setPosition(x, y - 180);
+	}
+
+
+
+	void draw() {
+		sf::Text temp_text;
+		temp_text.setFont(m_font);
+		temp_text.setString(m_text);
+		temp_text.setPosition(this->getPosition());
+		temp_text.scale(0.5f, 0.5f);
+		temp_text.setFillColor(sf::Color::White);
+
+		g_window->draw(log_rect);
+		//g_window->draw(m_rect);
+		g_window->draw(temp_text);
+
+
+		for (int i = 0; i < m_text_log.size(); i++) {
+			string m_string = m_text_log[i];
+			wstring w_string;
+			w_string.assign(m_string.begin(), m_string.end());
+			temp_text.setString(w_string);
+			temp_text.setPosition(this->getPosition().x, this->getPosition().y - 15 * (11 - i) - 10);
+			g_window->draw(temp_text);
+		}
+	}
+
+	
+
+	bool getFocus() {
+		return m_hasfocus;
+	}
+
+
+	~TextField() {}
+};
 
 class OBJECT {
 private:
@@ -48,6 +111,10 @@ private:
 	sf::Sprite m_sprite;
 	sf::Text m_name;
 	sf::Text m_chat;
+	sf::Vector2f m_text_tile_size;
+	sf::Vector2i m_text_pos;
+	sf::Vector2i m_log_size;
+	
 	chrono::system_clock::time_point m_mess_end_time;
 public:
 	int id;
@@ -62,6 +129,9 @@ public:
 		m_sprite.setTextureRect(sf::IntRect(x, y, x2, y2));
 		set_name("NONAME");
 		m_mess_end_time = chrono::system_clock::now();
+		m_text_pos = { 10,5 };
+		m_log_size = {20 - 10,5 };
+		m_text_tile_size={ 50.f,50.f };
 	}
 	OBJECT() {
 		m_showing = false;
@@ -93,28 +163,32 @@ public:
 		float ry = (m_y - g_y_origin) * 65.0f + 8;
 		m_sprite.setPosition(rx, ry);
 		g_window->draw(m_sprite);
+		
 		if (m_mess_end_time < chrono::system_clock::now()) {
 			m_name.setPosition(rx - 10, ry - 20);
 			g_window->draw(m_name);
 		}
 		else {
-			m_chat.setPosition(rx - 10, ry - 20);
-			g_window->draw(m_chat);
+			
 		}
+		
 	}
+	
 	void set_name(const char str[]) {
 		m_name.setFont(g_font);
 		m_name.setString(str);
 		m_name.setFillColor(sf::Color(255, 255, 0));
 		m_name.setStyle(sf::Text::Bold);
 	}
-	void set_chat(const char str[]) {
+	sf::Text set_chat(const char str[]) {
 		m_chat.setFont(g_font);
 		m_chat.setString(str);
 		m_chat.setFillColor(sf::Color(255, 255, 255));
 		m_chat.setStyle(sf::Text::Bold);
-		m_mess_end_time = chrono::system_clock::now() + chrono::seconds(3);
+		return m_chat;
+		//m_mess_end_time = chrono::system_clock::now() + chrono::seconds(3);
 	}
+	
 	void set_status(short level, short hp,short maxhp,int exp){
 		m_hp = hp;
 		m_maxhp=maxhp;
@@ -128,8 +202,9 @@ OBJECT avatar;
 OBJECT players[MAX_USER + MAX_NPC];
 
 OBJECT white_tile;
+OBJECT tent_tile;
 OBJECT black_tile;
-
+OBJECT rock_tile;
 sf::Texture* board;
 sf::Texture* pieces;
 
@@ -141,13 +216,24 @@ void client_initialize()
 		cout << "Font Loading Error!\n";
 		while (true);
 	}
-	board->loadFromFile("chessmap.bmp");
-	pieces->loadFromFile("chess2.png");
+	board->loadFromFile("chessmap2.bmp");
+	pieces->loadFromFile("chess3.png");
 	white_tile = OBJECT{ *board, 5, 5, TILE_WIDTH, TILE_WIDTH };
 	black_tile = OBJECT{ *board, 69, 5, TILE_WIDTH, TILE_WIDTH };
-	avatar = OBJECT{ *pieces, 128, 0, 64, 64 };
-	for (auto& pl : players) {
-		pl = OBJECT{ *pieces, 0, 0, 64, 64 };
+	tent_tile = OBJECT{ *board, 5, 69, TILE_WIDTH, TILE_WIDTH };
+	rock_tile = OBJECT{ *board, 69, 69, TILE_WIDTH, TILE_WIDTH };
+	avatar = OBJECT{ *pieces, 0, 0, 64, 64 };
+	for (int i = 0; i <= NPC_ID_END;++i) {
+		if(i<MAX_USER)
+			players[i] = OBJECT{ *pieces, 256, 0, 64, 64 };
+		else if(i>MAX_USER&&i<=NPC_KEROB_END)
+			players[i] = OBJECT{ *pieces, 128, 0, 64, 64 };
+		else if (i > NPC_KEROB_END && i <= NPC_WOLF_END)
+			players[i] = OBJECT{ *pieces, 64, 0, 64, 64 };
+		else if (i > NPC_WOLF_END && i <= NPC_SLIME_END)
+			players[i] = OBJECT{ *pieces, 192, 0, 64, 64 };
+		else if (i > NPC_SLIME_END && i <= NPC_CHICKEN_END)
+			players[i] = OBJECT{ *pieces, 320, 0, 64, 64 };
 	}
 }
 
@@ -243,15 +329,15 @@ void ProcessPacket(char* ptr)
 	{
 		sc_packet_chat* my_packet = reinterpret_cast<sc_packet_chat*>(ptr);
 		int other_id = my_packet->id;
-		if (other_id == g_myid) {
-			avatar.set_chat(my_packet->message);
+	
+		if (m_text_log.size() < 10)
+			m_text_log.push_back(my_packet->message);
+		else
+		{
+			m_text_log.erase(m_text_log.begin());
+			m_text_log.push_back(my_packet->message);
 		}
-		else if (other_id < MAX_USER) {
-			players[other_id].set_chat(my_packet->message);
-		}
-		else {
-			players[other_id].set_chat(my_packet->message);
-		}
+		
 		break;
 	}
 	case SC_PACKET_STATUS_CHANGE:
@@ -340,20 +426,27 @@ bool client_main()
 	avatar.draw();
 	for (auto& pl : players) pl.draw();
 	sf::Text text;
+	sf::Text hp_text;
 	text.setFont(g_font);
+	hp_text.setFont(g_font);
 	char buf[100];
-	sprintf_s(buf, "(%d, %d)", avatar.m_x, avatar.m_y);
+	sprintf_s(buf, "(level : %d , exp : %d)", avatar.m_level, avatar.m_exp);
 	text.setString(buf);
-	hp_progress = 300 * ((float)avatar.m_hp / (float)avatar.m_maxhp);
-	sf::RectangleShape hpbar(sf::Vector2f(hp_progress, 30));
-	sf::RectangleShape maxhp_bar(sf::Vector2f(300, 30));
+	text.setPosition(300, 150);
+	text.setFillColor(sf::Color(0,0,255,255));
+	hp_text.setString("hp:");
+	hp_text.setPosition(10, 80);
+	hp_progress = 500 * ((float)avatar.m_hp / (float)avatar.m_maxhp);
+	sf::RectangleShape hpbar(sf::Vector2f(hp_progress, 100));
+	sf::RectangleShape maxhp_bar(sf::Vector2f(500, 100));
 	hpbar.setFillColor(sf::Color(255, 0, 0, 200));
 	maxhp_bar.setFillColor(sf::Color(5, 5, 5, 230));
-	hpbar.setPosition(10.0f, 30);
-	maxhp_bar.setPosition(10.0f, 30);
+	hpbar.setPosition(60.0f, 30);
+	maxhp_bar.setPosition(60.0f, 30);
 	g_window->draw(maxhp_bar);
 	g_window->draw(hpbar);
 	g_window->draw(text);
+	g_window->draw(hp_text);
 	return true;
 }
 void send_attack_packet()
@@ -383,7 +476,15 @@ void send_login_packet(string &name)
 	size_t sent = 0;
 	socket.send(&packet, sizeof(packet), sent);
 }
-
+void send_teleport_packet()
+{
+	cs_packet_login packet;
+	packet.size = sizeof(packet);
+	packet.type = CS_PACKET_TELEPORT;
+	size_t sent = 0;
+	socket.send(&packet, sizeof(packet), sent);
+}
+chrono::steady_clock::time_point t1 = chrono::high_resolution_clock::now();
 int main()
 {
 	wcout.imbue(locale("korean"));
@@ -401,17 +502,14 @@ int main()
 	}
 
 	client_initialize();
-	//string name{ "PL" };
-	
-	//auto tt = chrono::duration_cast<chrono::milliseconds>
-	//	(chrono::system_clock::now().
-	//		time_since_epoch()).count();
-	//name += to_string(tt % 1000);
+
 	send_login_packet(name);	
 	avatar.set_name(name.c_str());
 	sf::RenderWindow window(sf::VideoMode(WINDOW_WIDTH, WINDOW_HEIGHT), "2D CLIENT");
 	g_window = &window;
-
+	TextField text_field(20);
+	text_field.setPosition(900, 900);
+	
 	while (window.isOpen())
 	{
 		sf::Event event;
@@ -419,7 +517,9 @@ int main()
 		{
 			if (event.type == sf::Event::Closed)
 				window.close();
+			
 			if (event.type == sf::Event::KeyPressed) {
+				
 				switch (event.key.code) {
 				case sf::Keyboard::Left:
 					send_move_packet(2);
@@ -436,6 +536,9 @@ int main()
 				case sf::Keyboard::A:
 					send_attack_packet();
 					break;
+				case sf::Keyboard::B:
+					send_teleport_packet();
+					break;
 				case sf::Keyboard::Escape:
 					window.close();
 					break;
@@ -447,6 +550,7 @@ int main()
 		window.clear();
 		if (false == client_main())
 			window.close();
+		text_field.draw();
 		window.display();
 	}
 	client_finish();

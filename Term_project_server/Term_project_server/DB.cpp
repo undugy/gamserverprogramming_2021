@@ -1,15 +1,15 @@
 #include "DB.h"
 extern array<NPC*, MAX_USER + MAX_NPC>clients;
 DB* DB::m_pInst = NULL;
-DB::DB():hstmt(0)
+DB::DB()//:hstmt(0)
 {
 	InitDB();
 }
 
 DB::~DB()
 {
-	SQLCancel(hstmt);
-	SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
+	//SQLCancel(hstmt);
+	//SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
 	SQLDisconnect(hdbc);
 	SQLFreeHandle(SQL_HANDLE_DBC, hdbc);
 	SQLFreeHandle(SQL_HANDLE_ENV, henv);
@@ -45,7 +45,7 @@ void DB::InitDB()
 				// Allocate statement handle  
 				if (retcode == SQL_SUCCESS || retcode == SQL_SUCCESS_WITH_INFO) {
 					cout << "ODBC Connected\n";
-					retcode = SQLAllocHandle(SQL_HANDLE_STMT, hdbc, &hstmt);
+					//retcode = SQLAllocHandle(SQL_HANDLE_STMT, hdbc, &hstmt);
 				}
 
 
@@ -56,6 +56,7 @@ void DB::InitDB()
 
 void DB::Save_Data(int c_id)
 {
+	SQLHSTMT hstmt = 0;
 	cl = (Player*)clients[c_id];
 	wchar_t exec[256];
 	wchar_t wname[MAX_NAME_SIZE + 1];
@@ -81,24 +82,25 @@ void DB::Save_Data(int c_id)
 void DB::get_login_data(int c_id,char*name)
 {
 	//setlocale(LC_ALL, "korean");
+	SQLHSTMT hstmt = 0;
 	cl = (Player*)clients[c_id];
 	wchar_t exec[256];
-	wchar_t wname[MAX_NAME_SIZE+1];
+	wchar_t wname[MAX_NAME_SIZE];
 	size_t len;
-	mbstowcs_s(&len, wname, MAX_NAME_SIZE + 1, name, MAX_NAME_SIZE + 1);
+	mbstowcs_s(&len, wname, MAX_NAME_SIZE, name, MAX_NAME_SIZE );
 	wsprintf(exec, L"EXEC select_if_exist @Param=N'%ls'", wname);
 	wcout << exec << endl;
 	retcode = SQLAllocHandle(SQL_HANDLE_STMT, hdbc, &hstmt);
 	retcode = SQLExecDirect(hstmt, (SQLWCHAR*)exec, SQL_NTS);
 	if (retcode == SQL_SUCCESS || retcode == SQL_SUCCESS_WITH_INFO)
 	{
-		retcode = SQLBindCol(hstmt, 1, SQL_C_WCHAR, p_id, MAX_NAME_SIZE + 1, &cb_id);
-		retcode = SQLBindCol(hstmt, 2, SQL_C_SSHORT, &p_hp, 100, &cb_hp);
-		retcode = SQLBindCol(hstmt, 3, SQL_C_SSHORT, &p_maxhp, 100, &cb_maxhp);
-		retcode = SQLBindCol(hstmt, 4, SQL_C_SLONG, &p_exp, 100, &cb_exp);
-		retcode = SQLBindCol(hstmt, 5, SQL_C_SSHORT, &p_level, 100, &cb_level);
-		retcode = SQLBindCol(hstmt, 6, SQL_C_SSHORT, &p_x, 100, &cb_x);
-		retcode = SQLBindCol(hstmt, 7, SQL_C_SSHORT, &p_y, 100, &cb_y);
+		retcode = SQLBindCol(hstmt, 1, SQL_C_WCHAR, p_id, MAX_NAME_SIZE, &cb_id);
+		retcode = SQLBindCol(hstmt, 2, SQL_C_SSHORT, &p_hp, sizeof(p_hp), &cb_hp);
+		retcode = SQLBindCol(hstmt, 3, SQL_C_SSHORT, &p_maxhp, sizeof(p_maxhp), &cb_maxhp);
+		retcode = SQLBindCol(hstmt, 4, SQL_C_SLONG, &p_exp, sizeof(p_exp) , &cb_exp);
+		retcode = SQLBindCol(hstmt, 5, SQL_C_SSHORT, &p_level, sizeof(p_level) , &cb_level);
+		retcode = SQLBindCol(hstmt, 6, SQL_C_SSHORT, &p_x, sizeof(p_x) , &cb_x);
+		retcode = SQLBindCol(hstmt, 7, SQL_C_SSHORT, &p_y, sizeof(p_x) , &cb_y);
 		
 		
 		
@@ -107,16 +109,22 @@ void DB::get_login_data(int c_id,char*name)
 				HandleDiagnosticRecord(hstmt, SQL_HANDLE_STMT, retcode);
 		if (retcode == SQL_SUCCESS || retcode == SQL_SUCCESS_WITH_INFO)
 		{
-				cl->x = p_x;
-				cl->y = p_y;
-				cl->level = p_level;
-				cl->hp = p_hp;
-				cl->maxhp=p_maxhp;
+			if (cb_id != 0)
+			{
+				cl->x = (short)p_x;
+				cl->y = (short)p_y;
+				cl->id = c_id;
+				cl->level = (short)p_level;
+				cl->hp = (short)p_hp;
+				cl->maxhp = (short)p_maxhp;
 				strcpy_s(cl->name, name);
-				printf("플레이어 초기화");
-				
+				cout << cl->name <<", 길이:" << strlen(cl->name) << endl;
+				printf("플레이어 초기화\n");
 
+			}
+			
 		}
+		
 		
 	}
 	else {
@@ -124,7 +132,10 @@ void DB::get_login_data(int c_id,char*name)
 	}
 	if (retcode == SQL_SUCCESS || retcode == SQL_SUCCESS_WITH_INFO) {
 		SQLCancel(hstmt);
+
 		SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
+	
+		
 	}
 }
 

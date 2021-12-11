@@ -9,7 +9,7 @@
 #include <unordered_set>
 #include <concurrent_priority_queue.h>
 #include <sqlext.h>  
-
+#include<string>
 #include "2021_°¡À»_protocol.h"
 #include"define.h"
 #include"type.h"

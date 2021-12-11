@@ -50,10 +50,10 @@ void Player::send_remove_object(int victim)
 	packet.type = SC_PACKET_REMOVE_OBJECT;
 	do_send(sizeof(packet), &packet);
 }
-void Player::send_chat_packet(int user_id, char* mess)
+void Player::send_chat_packet(char* mess)
 {
 	sc_packet_chat packet;
-	packet.id = user_id;
+	packet.id = id;
 	packet.size = sizeof(packet);
 	packet.type = SC_PACKET_CHAT;
 	strcpy_s(packet.message, mess);
@@ -98,6 +98,18 @@ void Player::send_move_packet(int mover)
 	packet.type = SC_PACKET_MOVE;
 	packet.x = p->x;
 	packet.y = p->y;
+	packet.move_time = m_last_move_time;
+	do_send(sizeof(packet), &packet);
+}
+void Player::send_move_packet(int x, int y, int mover)
+{
+	sc_packet_move packet;
+	Player* p = (Player*)clients[mover];
+	packet.id = mover;
+	packet.size = sizeof(packet);
+	packet.type = SC_PACKET_MOVE;
+	packet.x =x;
+	packet.y = y;
 	packet.move_time = p->m_last_move_time;
 	do_send(sizeof(packet), &packet);
 }

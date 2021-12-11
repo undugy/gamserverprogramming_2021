@@ -7,10 +7,20 @@ const int  WORLD_WIDTH = 2000;
 const int  MAX_NAME_SIZE = 20;
 const int  MAX_CHAT_SIZE = 100;
 const int  MAX_USER = 10000;
-//const int  MAX_NPC = 200000;
-const int  MAX_NPC = 2000;
+const int  MAX_NPC =	200000;
+
+const int MAX_KEROB =	40000;// 4만마리
+const int MAX_WOLF =	10000;// 1만마리
+const int MAX_SLIME =   100000;// 10만마리
+const int MAX_CHICKEN = 50000;// 5만마리
+
 constexpr int NPC_ID_START = MAX_USER;
 constexpr int NPC_ID_END = MAX_USER + MAX_NPC - 1;
+
+constexpr int NPC_KEROB_END = MAX_USER + MAX_KEROB - 1;
+constexpr int NPC_WOLF_END = NPC_KEROB_END + MAX_WOLF ;
+constexpr int NPC_SLIME_END = NPC_WOLF_END + MAX_SLIME ;
+constexpr int NPC_CHICKEN_END = NPC_SLIME_END + MAX_CHICKEN ;
 
 const char CS_PACKET_LOGIN = 1;
 const char CS_PACKET_MOVE = 2;

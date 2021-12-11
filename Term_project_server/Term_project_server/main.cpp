@@ -4,8 +4,7 @@
 #include"DB.h"
 HANDLE g_h_iocp;
 SOCKET g_s_socket;
-SQLHENV henv;
-SQLHDBC hdbc;
+
 concurrency::concurrent_priority_queue <timer_event> timer_queue;
 array<NPC*, MAX_USER + MAX_NPC>clients;
 //-------에러확인---------------------------------
@@ -14,12 +13,17 @@ void error_display(int err_no);//에러 확인용
 
 bool is_near(int a, int b);//시야에 있는지 체크
 bool is_npc(int id);//npc인지 체크
+bool is_area(int id) {
+	if (MONSTER_AREA < abs(clients[id]->x - clients[id]->origin_x)) return false;
+	if (MONSTER_AREA < abs(clients[id]->y - clients[id]->origin_y)) return false;
+	return true;
+}
 bool is_player(int id)
 {
 	return (id >= 0) && (id < MAX_USER);
 }//player 인지 체크
 int get_new_id();//새로운 아이디 할당(로그인 아이디 아님)
-
+void type_move(int npc_id);
 //--------------------------------------------
 
 void do_timer();
@@ -35,6 +39,7 @@ void do_npc_move(int npc_id);
 int API_get_x(lua_State* L);
 int API_get_y(lua_State* L);
 int API_recognize_player(lua_State* L);
+int API_regen(lua_State* L);
 void attack(int client_id, int target_id);
 
 
@@ -90,8 +95,11 @@ int main()
 	//ai_thread.join();
 	timer_thread.join();
 	for (auto cl : clients) {
+		if (true == is_npc(cl->id))break;
+		
 		if (ST_INGAME == cl->state)
 		{
+			
 			DB::GetInst()->Save_Data(cl->id);
 			Disconnect(cl->id);
 		}
@@ -108,7 +116,7 @@ int main()
 void Activate_Player_Move_Event(int target, int player_id)
 {
 	EXP_OVER* exp_over = new EXP_OVER;
-	exp_over->_comp_op = OP_PLAYER_MOVE;
+	exp_over->_comp_op = OP_NPC_MOVE;
 	exp_over->_target = player_id;
 	PostQueuedCompletionStatus(g_h_iocp, 1, target, &exp_over->_wsa_over);
 }
@@ -194,18 +202,23 @@ void process_packet(int client_id, unsigned char* p)
 		for (int i = 0; i < MAX_USER; ++i)
 		{	
 			clients[i]->state_lock.lock();
-			if (ST_INGAME != clients[i]->state){
+			if (ST_FREE== clients[i]->state){
 				clients[i]->state_lock.unlock();
 				continue;
-
+		
 			}
 			clients[i]->state_lock.unlock();
-
-			if (strcmp(clients[i]->name, packet->name) == 0)
-				((Player*)clients[client_id])->send_login_fail(0);
-		}
-		DB::GetInst()->get_login_data(client_id, packet->name);
 		
+			if (strcmp(clients[i]->name, packet->name) == 0)
+			{
+				cl->send_login_fail(0);
+				return;
+			}
+		}
+		//DB::GetInst()->db_l.lock();
+		DB::GetInst()->get_login_data(cl->id, packet->name);
+		//DB::GetInst()->db_l.unlock();
+		cl->damage = 3;
 		//strcpy_s(cl->name, packet->name);
 		cl->send_login_ok_packet();
 		cl->send_status_change_packet();
@@ -214,11 +227,11 @@ void process_packet(int client_id, unsigned char* p)
 		cl->state_lock.lock();
 		cl->state = ST_INGAME;
 		cl->state_lock.unlock();
+		//if(c)
 		timer_queue.push(SetTimerEvent(client_id, client_id, EVENT_PLAYER_HILL, 5));
 		// 새로 접속한 플레이어의 정보를 주위 플레이어에게 보낸다
 		for (auto other : clients) {
-			if (true == is_npc(other->id)) continue;
-			if (other->id == client_id) continue;
+			
 			other_cl = (Player*)other;
 			other_cl->state_lock.lock();
 			if (ST_INGAME != other_cl->state) {
@@ -226,7 +239,8 @@ void process_packet(int client_id, unsigned char* p)
 				continue;
 			}
 			other_cl->state_lock.unlock();
-
+			if (true == is_npc(other->id)) continue;
+			if (other->id == client_id) continue;
 			if (false == is_near(other_cl->id, client_id))
 				continue;
 
@@ -247,6 +261,7 @@ void process_packet(int client_id, unsigned char* p)
 		// 새로 접속한 플레이어에게 주위 객체 정보를 보낸다
 		for (auto other : clients) {
 			if (other->id == client_id) continue;
+			
 			other_cl = (Player*)other;
 			other_cl->state_lock.lock();
 			if (ST_INGAME != other_cl->state) {
@@ -302,10 +317,18 @@ void process_packet(int client_id, unsigned char* p)
 				continue;
 			if (false == is_near(client_id, other->id))
 				continue;
-			if (true == is_npc(other->id)) {
-				Activate_Player_Move_Event(other->id, cl->id);
+			
+			if (true == is_npc(other->id) ) 
+			{
+				if(other->is_active==true)
+					nearlist.insert(other->id);
 			}
-			nearlist.insert(other->id);
+			else
+				nearlist.insert(other->id);
+				//Activate_Player_Move_Event(other->id, cl->id);
+				//timer_queue.push(SetTimerEvent(other->id, other->id, EVENT_NPC_MOVE, 1));
+			//}
+			
 		}
 
 		cl->send_move_packet(cl->id);
@@ -323,6 +346,7 @@ void process_packet(int client_id, unsigned char* p)
 				cl->send_put_object(other);
 
 				if (true == is_npc(other)) {
+					if(clients[other]->is_active == true)
 					timer_queue.push(SetTimerEvent(other, other, EVENT_NPC_MOVE, 1));
 					continue;
 				}
@@ -341,7 +365,7 @@ void process_packet(int client_id, unsigned char* p)
 			// 계속 시야에 존재하는 플레이어 처리
 			else {
 				if (true == is_npc(other)) continue;
-
+				near_cl = (Player*)clients[other];
 				near_cl->m_vl.lock();
 				if (0 != near_cl->m_viewlist.count(cl->id)) {
 					near_cl->m_vl.unlock();
@@ -376,6 +400,7 @@ void process_packet(int client_id, unsigned char* p)
 		for (auto npc : my_vl)
 		{
 			if (false == is_npc(npc))continue;
+			if (false == clients[npc]->is_active)continue;
 			EXP_OVER* exp_over = new EXP_OVER;
 			exp_over->_comp_op = OP_TRACKING_PLAYER;
 			exp_over->_target = client_id;
@@ -385,7 +410,25 @@ void process_packet(int client_id, unsigned char* p)
 	}
 	case CS_PACKET_ATTACK: {
 		//공격검사,따라오는 이벤트 API,움직임 로직(do_npc_move())
+		cl->m_vl.lock();
+		auto near_vl = cl->m_viewlist;
+		cl->m_vl.unlock();
+		for (auto &monster : near_vl)
+		{
+			if (false == is_npc(monster))continue;
+			if (false == clients[monster]->is_active)continue;
+			attack(client_id, monster);
+		}
+		break;
+	}
+	case CS_PACKET_TELEPORT: {
 		
+		int myid = cl->id;
+		int x = rand() % WORLD_WIDTH;
+		int y = rand() % WORLD_HEIGHT;
+		cl->x=x;
+		cl->y = y;
+		cl->send_move_packet(x, y, myid);
 		break;
 	}
 	}
@@ -423,6 +466,12 @@ void do_timer() {
 					PostQueuedCompletionStatus(g_h_iocp, 1, ev.obj_id, &ex_over->_wsa_over);
 					break;
 				}
+				case EVENT_REGEN: {
+					EXP_OVER* ex_over = new EXP_OVER;
+					ex_over->_comp_op = OP_REGEN;
+					PostQueuedCompletionStatus(g_h_iocp, 1, ev.obj_id, &ex_over->_wsa_over);
+					break;
+				}
 				}
 			}
 			else {
@@ -450,6 +499,7 @@ void worker()
 			cout << "GQCS Error : ";
 			error_display(err_no);
 			cout << endl;
+			
 			DB::GetInst()->Save_Data(client_id);
 			Disconnect(client_id);
 			if (exp_over->_comp_op == OP_SEND)
@@ -461,6 +511,7 @@ void worker()
 		case OP_RECV: {
 			if (num_byte == 0) {
 				DB::GetInst()->Save_Data(client_id);
+				
 				Disconnect(client_id);
 				continue;
 			}
@@ -501,9 +552,8 @@ void worker()
 			}
 			else {
 				Player* cl = (Player*)clients[new_id];
-				cl->x = rand() % WORLD_WIDTH;
-				cl->y = rand() % WORLD_HEIGHT;
 				cl->id = new_id;
+				//cout << new_id << endl;
 				cl->m_prev_size = 0;
 				cl->m_recv_over._comp_op = OP_RECV;
 				cl->m_recv_over._wsa_buf.buf = reinterpret_cast<char*>(cl->m_recv_over._net_buf);
@@ -514,7 +564,7 @@ void worker()
 				CreateIoCompletionPort(reinterpret_cast<HANDLE>(c_socket), g_h_iocp, new_id, 0);
 				cl->do_recv();
 			}
-
+			
 			ZeroMemory(&exp_over->_wsa_over, sizeof(exp_over->_wsa_over));
 			c_socket = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, 0, 0, WSA_FLAG_OVERLAPPED);
 			*(reinterpret_cast<SOCKET*>(exp_over->_net_buf)) = c_socket;
@@ -541,12 +591,14 @@ void worker()
 			break;
 		}
 		case OP_TRACKING_PLAYER: {
-			lua_State* L = clients[client_id]->L;
-			clients[client_id]->lua_lock.lock();
-			lua_getglobal(L, "event_agro_fallow");
-			lua_pushnumber(L, reinterpret_cast<Player*>(clients[client_id])->target_id);
-			lua_pcall(L, 1, 0, 0);
-			clients[client_id]->lua_lock.unlock();
+			if (clients[client_id]->type < 3) {
+				lua_State* L = clients[client_id]->L;
+				clients[client_id]->lua_lock.lock();
+				lua_getglobal(L, "event_agro_fallow");
+				lua_pushnumber(L, clients[client_id]->target_id);
+				lua_pcall(L, 1, 0, 0);
+				clients[client_id]->lua_lock.unlock();
+			}
 			//cout << "tracking들어오기는함\n";
 			
 			delete exp_over;
@@ -554,13 +606,27 @@ void worker()
 		
 		}
 		case OP_NPC_ATTACK: {
-			if (exp_over->_target < MAX_USER)
+			if (exp_over->_target < MAX_USER&&clients[client_id]->is_active==true&&
+				clients[client_id]->type!=4)
 			{
+				
 				attack(client_id, exp_over->_target);
 				if (true == clients[client_id]->is_recognize)
 					timer_queue.push(SetTimerEvent(client_id, exp_over->_target,
 						EVENT_NPC_ATTACK, 1));
 			}
+			delete exp_over;
+			break;
+		}
+		case OP_REGEN:
+		{
+			
+			clients[client_id]->hp = clients[client_id]->maxhp;
+			clients[client_id]->x = clients[client_id]->origin_x;
+			clients[client_id]->y = clients[client_id]->origin_y;
+			clients[client_id]->is_active = true;
+			clients[client_id]->is_recognize = false;
+			
 			delete exp_over;
 			break;
 		}
@@ -570,11 +636,41 @@ void worker()
 void Initialize_NPC()
 {
 	int x, y;
-	for (int i = NPC_ID_START; i <= NPC_ID_END; ++i) {
-		x = rand() % WORLD_WIDTH;
-		y = rand() % WORLD_HEIGHT;
-		clients[i] = new NPC(i, 1,x , y,1,50,30);
-
+	short level,dam;
+	for (int i = NPC_ID_START; i <= NPC_ID_END; ++i) {// type 0(pl),1(ke),2(wo),3(sl),4(ch)
+		if (i <= NPC_KEROB_END)
+		{
+			
+			x = (rand() % (WORLD_WIDTH/2))+((WORLD_WIDTH/2)-1);
+			y = rand() % WORLD_HEIGHT;
+			level = 12;
+			
+			clients[i] = new NPC(i, 1, x, y,level*10, level,level*2, level*10, "Cerberus");
+			
+			
+		}
+		else if (i > NPC_KEROB_END && i <= NPC_WOLF_END)
+		{
+			x = rand() % WORLD_WIDTH; 
+			y = (rand() % (WORLD_HEIGHT/2)) + ((WORLD_HEIGHT/2) - 1);
+			level = 10;
+			clients[i] = new NPC(i, 2, x, y,level*10, level, level * 2, level * 10, "WereWolf");
+		}
+		else if (i > NPC_WOLF_END && i <= NPC_SLIME_END)
+		{
+			x = rand() % WORLD_WIDTH;
+			y = rand() % (WORLD_HEIGHT/2);
+			level = rand() % 7 + 2;
+			clients[i] = new NPC(i, 3, x, y, level * 10,level, level * 2, level * 10, "SLIME");
+		}
+		else if (i > NPC_SLIME_END && i <= NPC_CHICKEN_END)
+		{
+			x = rand() % (WORLD_WIDTH/2);
+			y = rand() % WORLD_HEIGHT;
+			level = rand() % 5 + 1;
+			clients[i] = new NPC(i, 4, x, y, level * 10, level, level * 2, level * 10,"CHICKEN");
+		}
+		//cout << "type : " << clients[i]->type << "dam:" << clients[i]->damage << endl;
 		lua_State* L=clients[i]->L = luaL_newstate();
 		luaL_openlibs(L);
 		int error = luaL_loadfile(L, "monster.lua") ||
@@ -593,10 +689,14 @@ void Initialize_NPC()
 		lua_register(L, "API_recognize_player", API_recognize_player);
 		lua_register(L, "API_get_x", API_get_x);
 		lua_register(L, "API_get_y", API_get_y);
+		//lua_register(L, "API_regen", API_regen);
+		
 	}
 }
 void do_npc_move(int npc_id)
 {
+	if (false == clients[npc_id]->is_active)
+		return;
 	unordered_set <int> old_viewlist;
 	unordered_set <int> new_viewlist;
 
@@ -604,31 +704,13 @@ void do_npc_move(int npc_id)
 		if (obj->state != ST_INGAME)
 			continue;
 		if (false == is_player(obj->id))
-			continue;
+			break;
 		if (true == is_near(npc_id, obj->id))
 			old_viewlist.insert(obj->id);
 	}
 	auto& x = clients[npc_id]->x;
 	auto& y = clients[npc_id]->y;
-	if (false == clients[npc_id]->is_recognize) {
-		switch (rand() % 4) {
-		case 0: if (y > 0) y--; break;
-		case 1: if (y < (WORLD_HEIGHT - 1)) y++; break;
-		case 2: if (x > 0) x--; break;
-		case 3: if (x < (WORLD_WIDTH - 1)) x++; break;
-		}
-	}
-	else
-	{
-		if (clients[clients[npc_id]->target_id]->x - x != 0)
-		{
-			x+= (clients[clients[npc_id]->target_id]->x - x) / abs(clients[clients[npc_id]->target_id]->x - x);
-		}
-		else if (clients[clients[npc_id]->target_id]->y - y != 0)
-		{
-			y += (clients[clients[npc_id]->target_id]->y - y) / abs(clients[clients[npc_id]->target_id]->y - y);
-		}
-	}
+	type_move(npc_id);
 	for (auto obj : clients) {
 		if (obj->state != ST_INGAME)
 			continue;
@@ -642,7 +724,9 @@ void do_npc_move(int npc_id)
 	}
 	// 새로 시야에 들어온 플레이어
 	for (auto pl : new_viewlist) {
+		if (clients[npc_id]->is_active == false)continue;
 		if (0 == old_viewlist.count(pl)) {
+			
 			((Player*)clients[pl])->m_vl.lock();
 			((Player*)clients[pl])->m_viewlist.insert(npc_id);
 			((Player*)clients[pl])->m_vl.unlock();
@@ -705,7 +789,7 @@ int API_recognize_player(lua_State* L)
 	
 	clients[npc_id]->is_recognize = true;
 	clients[npc_id]->target_id = user_id;
-	
+	if(clients[npc_id]->type<3)
 	timer_queue.push(SetTimerEvent(npc_id, user_id, EVENT_NPC_ATTACK, 1));
 	return 1;
 	
@@ -720,13 +804,34 @@ void attack(int client_id, int target_id)
 		clients[client_id]->y == clients[target_id]->y && abs(clients[client_id]->x - clients[target_id]->x) <= 1)
 	{
 		clients[target_id]->hp -= clients[client_id]->damage;
+		
+		
 		cout << client_id << "가 " << target_id << "를 공격-> " << clients[target_id]->damage << "의 데미지를 입힘" << endl;
-		Player* target = (Player*)clients[target_id];
-		target->send_status_change_packet();
+		if (clients[target_id]->type == 3&& clients[target_id]->is_recognize==false) {//슬라임
+			clients[target_id]->is_recognize = true;
+			clients[target_id]->target_id = client_id;
+			timer_queue.push(SetTimerEvent(target_id, client_id, EVENT_NPC_ATTACK, 1));
+		}
+			
+			if (target_id < MAX_USER) {
+				char mess[256];
+				sprintf_s(mess, "monster %s attack-> player :%s hp -%d", clients[client_id]->name, clients[target_id]->name, clients[client_id]->damage);
+				((Player*)clients[target_id])->send_chat_packet(mess);
+				((Player*)clients[target_id])->send_status_change_packet();
+			}
+			else
+			{
+				char mess[256];
+				sprintf_s(mess, "player %s attack-> monster :%s hp -%d", clients[client_id]->name, clients[target_id]->name, clients[client_id]->damage);
+				((Player*)clients[client_id])->send_chat_packet(mess);
+			}
 		if (clients[target_id]->hp <= 0 && target_id < MAX_USER)
 		{
+			Player* target = (Player*)clients[target_id];
+			char mess[256];
+			sprintf_s(mess, "player %s died", clients[target_id]->name);
+			target->send_chat_packet(mess);
 			
-			cout << target->name << "이(가)" << client_id << "에 의해 죽었습니다" << endl;
 			target->m_vl.lock();
 			auto& old_viewlist = target->m_viewlist;
 			target->m_vl.unlock();
@@ -756,6 +861,7 @@ void attack(int client_id, int target_id)
 				new_viewlist.insert(i);
 			}
 			target->send_move_packet(target->id);
+			target->send_status_change_packet();
 			Player* other = NULL;
 			for (auto pl : old_viewlist)
 			{
@@ -782,6 +888,8 @@ void attack(int client_id, int target_id)
 					target->m_viewlist.insert(pl);
 					target->m_vl.unlock();
 					target->send_put_object(pl);
+					
+					if (true == is_npc(pl))continue;
 					other = (Player*)clients[pl];
 					other->m_vl.lock();
 					if (0 == other->m_viewlist.count(target_id))
@@ -800,6 +908,7 @@ void attack(int client_id, int target_id)
 
 				for (auto pl : old_viewlist)
 				{
+					
 					if( 0< new_viewlist.count(pl))continue;
 					target->m_vl.lock();
 					target->m_viewlist.erase(pl);
@@ -825,17 +934,203 @@ void attack(int client_id, int target_id)
 
 					lua_State* L = clients[npc]->L;
 					clients[npc]->lua_lock.lock();
-					lua_getglobal(L, "event_agro_fallow");
-					lua_pushnumber(L, target_id);
-					lua_pcall(L, 1, 0, 0);
-					clients[npc]->lua_lock.unlock();
+					if (clients[npc]->type < 3) {
+						lua_getglobal(L, "event_agro_fallow");
+						lua_pushnumber(L, target_id);
+						lua_pcall(L, 1, 0, 0);
+						clients[npc]->lua_lock.unlock();
+					}
+					else
+						clients[npc]->lua_lock.unlock();
 					
 				}
 			}
+			
 		
 		}
-		
-		
+		else if(target_id>MAX_USER&& clients[target_id]->hp<=0)
+		{
+			int exp = clients[target_id]->exp;
+			int type = clients[target_id]->type;
+			int level = clients[client_id]->level;
+			if (type < 3) { exp = exp * 2; }
+			clients[client_id]->exp += exp;
+			char mess[256];
+			strcpy_s(mess, "player level up!");
+
+			if ( level== 1)
+			{
+				if (clients[client_id]->exp >= 100)
+				{
+					clients[client_id]->exp -= 100;
+					clients[client_id]->level++;
+				}
+				((Player*)clients[client_id])->send_chat_packet(mess);
+
+			}
+			else if (level == 2)
+			{
+				if (clients[client_id]->exp >= 200)
+				{
+					clients[client_id]->exp -= 200;
+					clients[client_id]->level++;
+				}
+				((Player*)clients[client_id])->send_chat_packet(mess);
+
+			}
+			else {
+				if (clients[client_id]->exp >= ((int)pow(2.0, (float)(level - 2))) * 200)
+				{
+					clients[client_id]->exp -= ((int)pow(2.0, (float)(level - 2))) * 200;
+					clients[client_id]->level++;
+					((Player*)clients[client_id])->send_chat_packet(mess);
+				}
+			}
+			((Player*)clients[client_id])->send_status_change_packet();
+			
+			Player* other = NULL;
+			for (int i = 0; i < MAX_USER; ++i)
+			{
+				other = (Player*)clients[i];
+				other->state_lock.lock();
+				if (other->state != ST_INGAME)
+				{
+					other->state_lock.unlock();
+					continue;
+				}
+				other->state_lock.unlock();
+
+				other->m_vl.lock();
+				if (0 < other->m_viewlist.count(target_id))
+				{
+					other->m_viewlist.erase(target_id);
+					other->m_vl.unlock();
+					other->send_remove_object(target_id);
+				}
+				else
+					other->m_vl.unlock();
+			
+				
+			}
+			clients[target_id]->is_active= false;
+			//메세지 넣어주자
+			timer_queue.push(SetTimerEvent(target_id, target_id, EVENT_REGEN, 30));
+		}
 		//이벤트 호출
 	}
 }
+
+int API_regen(lua_State* L)
+{
+	int npc_id = (int)lua_tointeger(L, -4);
+	short x = (int)lua_tointeger(L, -3);
+	short y = (int)lua_tointeger(L, -2);
+	short hp = (int)lua_tointeger(L, -1);
+	lua_pop(L, 5);
+	clients[npc_id]->x = x;
+	clients[npc_id]->y = y;
+	clients[npc_id]->hp = hp;
+	clients[npc_id]->is_active = true;
+	clients[npc_id]->is_recognize = false;
+	return 1;
+
+}
+void type_move(int npc_id)
+{
+	auto& x = clients[npc_id]->x;
+	auto& y = clients[npc_id]->y;
+	switch (clients[npc_id]->type) {
+	case 1: {
+		if (true == clients[npc_id]->is_recognize) {
+			if (is_area(npc_id) == true) {
+				if (clients[clients[npc_id]->target_id]->x - x != 0)
+				{
+					x += (clients[clients[npc_id]->target_id]->x - x) / abs(clients[clients[npc_id]->target_id]->x - x);
+				}
+				else if (clients[clients[npc_id]->target_id]->y - y != 0)
+				{
+					y += (clients[clients[npc_id]->target_id]->y - y) / abs(clients[clients[npc_id]->target_id]->y - y);
+				}
+			}
+			
+			
+		}
+		else
+		{
+			if (clients[npc_id]->origin_x - x != 0)
+			{
+				x += (clients[npc_id]->origin_x - x) / abs(clients[npc_id]->origin_x - x);
+			}
+			else if (clients[npc_id]->origin_y - y != 0)
+			{
+				y += (clients[npc_id]->origin_y - y) / abs(clients[npc_id]->origin_y - y);
+			}
+		}
+		break;
+	}
+	case 2: {
+		if (true == is_area(npc_id))
+		{
+			if (false == clients[npc_id]->is_recognize) {
+
+				switch (rand() % 4) {
+				case 0: if (y > 0) y--; break;
+				case 1: if (y < (WORLD_HEIGHT - 1)) y++; break;
+				case 2: if (x > 0) x--; break;
+				case 3: if (x < (WORLD_WIDTH - 1)) x++; break;
+				}
+
+			}
+			else
+			{
+				if (clients[clients[npc_id]->target_id]->x - x != 0)
+				{
+					x += (clients[clients[npc_id]->target_id]->x - x) / abs(clients[clients[npc_id]->target_id]->x - x);
+				}
+				else if (clients[clients[npc_id]->target_id]->y - y != 0)
+				{
+					y += (clients[clients[npc_id]->target_id]->y - y) / abs(clients[clients[npc_id]->target_id]->y - y);
+				}
+
+			}
+		}
+		else
+		{
+			if (clients[npc_id]->origin_x - x != 0)
+			{
+				x += (clients[npc_id]->origin_x - x) / abs(clients[npc_id]->origin_x - x);
+			}
+			else if (clients[npc_id]->origin_y - y != 0)
+			{
+				y += (clients[npc_id]->origin_y - y) / abs(clients[npc_id]->origin_y - y);
+			}
+		}
+		break;
+	}
+	case 4: {
+		if (true == is_area(npc_id))
+		{
+			switch (rand() % 4) {
+			case 0: if (y > 0) y--; break;
+			case 1: if (y < (WORLD_HEIGHT - 1)) y++; break;
+			case 2: if (x > 0) x--; break;
+			case 3: if (x < (WORLD_WIDTH - 1)) x++; break;
+			}
+		}
+		else
+		{
+			if (clients[npc_id]->origin_x - x != 0)
+			{
+				x += (clients[npc_id]->origin_x - x) / abs(clients[npc_id]->origin_x - x);
+			}
+			else if (clients[npc_id]->origin_y - y != 0)
+			{
+				y += (clients[npc_id]->origin_y - y) / abs(clients[npc_id]->origin_y - y);
+			}
+		}
+		break;
+	}
+	default:break;
+	
+	}
+	}
