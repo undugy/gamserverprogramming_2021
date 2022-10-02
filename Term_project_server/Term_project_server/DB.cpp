@@ -118,8 +118,6 @@ void DB::get_login_data(int c_id,char*name)
 				cl->hp = (short)p_hp;
 				cl->maxhp = (short)p_maxhp;
 				strcpy_s(cl->name, name);
-				cout << cl->name <<", 길이:" << strlen(cl->name) << endl;
-				printf("플레이어 초기화\n");
 
 			}
 			

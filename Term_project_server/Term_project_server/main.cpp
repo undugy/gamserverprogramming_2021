@@ -87,7 +87,7 @@ int main()
 	vector <thread> worker_threads;
 	//thread ai_thread{ do_ai };
 	thread timer_thread{ do_timer };
-	for (int i = 0; i < 6; ++i)
+	for (int i = 0; i < 12; ++i)
 		worker_threads.emplace_back(worker);
 	for (auto& th : worker_threads)
 		th.join();
@@ -99,8 +99,9 @@ int main()
 		
 		if (ST_INGAME == cl->state)
 		{
-			
+			DB::GetInst()->db_l.lock();
 			DB::GetInst()->Save_Data(cl->id);
+			DB::GetInst()->db_l.unlock();
 			Disconnect(cl->id);
 		}
 	}
@@ -215,9 +216,9 @@ void process_packet(int client_id, unsigned char* p)
 				return;
 			}
 		}
-		//DB::GetInst()->db_l.lock();
+		DB::GetInst()->db_l.lock();
 		DB::GetInst()->get_login_data(cl->id, packet->name);
-		//DB::GetInst()->db_l.unlock();
+		DB::GetInst()->db_l.unlock();
 		cl->damage = 3;
 		//strcpy_s(cl->name, packet->name);
 		cl->send_login_ok_packet();
@@ -499,8 +500,9 @@ void worker()
 			cout << "GQCS Error : ";
 			error_display(err_no);
 			cout << endl;
-			
+			DB::GetInst()->db_l.lock();
 			DB::GetInst()->Save_Data(client_id);
+			DB::GetInst()->db_l.unlock();
 			Disconnect(client_id);
 			if (exp_over->_comp_op == OP_SEND)
 				delete exp_over;
@@ -532,19 +534,22 @@ void worker()
 				cl->m_prev_size = remain_data;
 				memcpy(&exp_over->_net_buf, packet_start, remain_data);
 			}
+			if (remain_data == 0)cl->m_prev_size = 0;
 			cl->do_recv();
 			break;
 		}
 		case OP_SEND: {
 			if (num_byte != exp_over->_wsa_buf.len) {
+				DB::GetInst()->db_l.lock();
 				DB::GetInst()->Save_Data(client_id);
+				DB::GetInst()->db_l.unlock();
 				Disconnect(client_id);
 			}
 			delete exp_over;
 			break;
 		}
 		case OP_ACCEPT: {
-			cout << "Accept Completed.\n";
+			//cout << "Accept Completed.\n";
 			SOCKET c_socket = *(reinterpret_cast<SOCKET*>(exp_over->_net_buf));
 			int new_id = get_new_id();
 			if (-1 == new_id) {
@@ -636,7 +641,7 @@ void worker()
 void Initialize_NPC()
 {
 	int x, y;
-	short level,dam;
+	short level;
 	for (int i = NPC_ID_START; i <= NPC_ID_END; ++i) {// type 0(pl),1(ke),2(wo),3(sl),4(ch)
 		if (i <= NPC_KEROB_END)
 		{
@@ -719,9 +724,10 @@ void do_npc_move(int npc_id)
 		if (true == is_near(npc_id, obj->id))
 		{
 			new_viewlist.insert(obj->id);
-			timer_queue.push(SetTimerEvent(npc_id, npc_id, EVENT_NPC_MOVE, 1));
 		}
 	}
+	if(new_viewlist.size()!=0)
+			timer_queue.push(SetTimerEvent(npc_id, npc_id, EVENT_NPC_MOVE, 1));//이상함
 	// 새로 시야에 들어온 플레이어
 	for (auto pl : new_viewlist) {
 		if (clients[npc_id]->is_active == false)continue;
@@ -937,7 +943,11 @@ void attack(int client_id, int target_id)
 					if (clients[npc]->type < 3) {
 						lua_getglobal(L, "event_agro_fallow");
 						lua_pushnumber(L, target_id);
-						lua_pcall(L, 1, 0, 0);
+						int err = lua_pcall(L, 1, 0, 0);
+						if(err){
+							cout << "Error : " << lua_tostring(L, -1) << endl;
+							lua_pop(L, 1);
+						}
 						clients[npc]->lua_lock.unlock();
 					}
 					else
@@ -948,7 +958,7 @@ void attack(int client_id, int target_id)
 			
 		
 		}
-		else if(target_id>MAX_USER&& clients[target_id]->hp<=0)
+		else if((target_id>MAX_USER)&& (clients[target_id]->hp<=0))
 		{
 			int exp = clients[target_id]->exp;
 			int type = clients[target_id]->type;
@@ -1012,7 +1022,7 @@ void attack(int client_id, int target_id)
 			
 				
 			}
-			clients[target_id]->is_active= false;
+			clients[target_id]->is_active.store(false);
 			//메세지 넣어주자
 			timer_queue.push(SetTimerEvent(target_id, target_id, EVENT_REGEN, 30));
 		}
